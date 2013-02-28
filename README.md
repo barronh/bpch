@@ -8,26 +8,26 @@ The python-based library for Binary Punch files is designed to provide NetCDF-li
 Prerequisites
 -------------
 
- * Linux<sup>`*`<sup>
+ * Linux`*`
  * Python >= 2.7
  * numpy >= 1.5
- * matplotlib >= 1.0<sup>`**`<sup>
- * mpl_toolkits.basemap >= 1.0<sup>`***`<sup>
+ * matplotlib >= 1.0`**`
+ * mpl_toolkits.basemap >= 1.0`***`
 
-<sup>`*`</sup>Linux is not actually required; Windows and Mac versions have been used. They are not supported.
+`*`Linux is not actually required; Windows and Mac versions have been used. They are not supported.
 
-<sup>`**`</sup>matplotlib is only required for plotting
+`**`matplotlib is only required for plotting
 
-<sup>`***`</sup>basemap is used only if available to add geopolitical boundaries to lat-lon plots.
+`***`basemap is used only if available to add geopolitical boundaries to lat-lon plots.
 
-### Prerequisites via EPD
+### Prerequisites via EPD (Mac OS X/Linux/Unix/Windows)
 
-This is the easiest way to get going. All of these prerequisites are available via the <a href=http://www.enthought.com/products/epd.php>Enthought Python Distribution</a> (EPD). EPD is free for academics, but the edX version is not sufficient (unless combined with virtualenv instructions below). 
+This is the easiest way to get going. All of these prerequisites are available via the <a href=http://www.enthought.com/products/epd.php>Enthought Python Distribution</a> (EPD). Download their installer and run it. It's that easy. EPD is free for academics, but the edX version is not sufficient (unless combined with virtualenv instructions below). 
 
 
-### Prerequisites via virtualenv
+### Prerequisites via virtualenv on Linux/Unix/Mac OS X
 
-If you have a working version of Python 2.7 (works with 2.5, but not supported) but you don't have root access to install, then I recommend you use <a href=https://pypi.python.org/pypi/virtualenv>virtualenv</a> by downloading <a href=https://raw.github.com/pypa/virtualenv/master/virtualenv.py>virtualenv.py</a>. The commands below setting up virtualenv and installing prerequisites:
+If you have a working version of Python 2.7 (or you can get edX from EPD for free) but you don't have root access to install, then I recommend you use <a href=https://pypi.python.org/pypi/virtualenv>virtualenv</a> by downloading <a href=https://raw.github.com/pypa/virtualenv/master/virtualenv.py>virtualenv.py</a>. The commands below setting up virtualenv and installing prerequisites:
 
 ```
 cd ~

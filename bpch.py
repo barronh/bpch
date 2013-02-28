@@ -495,6 +495,8 @@ class bpch(PseudoNetCDFFile):
             self.createDimension(dk, dv)
         self.createDimension('nv', 2)
         tracerinfo = tracerinfo or os.path.join(os.path.dirname(bpch_path), 'tracerinfo.dat')
+        if not os.path.exists(tracerinfo):
+            tracerinfo = 'tracerinfo.dat'
         if os.path.exists(tracerinfo):
             if os.path.isdir(tracerinfo): tracerinfo = os.path.join(tracerinfo, 'tracerinfo.dat')
             tracer_data = dict([(int(l[52:61].strip()), dict(NAME = l[:8].strip(), FULLNAME = l[9:39].strip(), MOLWT = float(l[39:49]), C = int(l[49:52]), TRACER = int(l[52:61]), SCALE = float(l[61:71]), UNIT = l[72:].strip())) for l in file(tracerinfo).readlines() if l[0] not in ('#', ' ')])
@@ -505,6 +507,8 @@ class bpch(PseudoNetCDFFile):
             tracer_names = defaultdictfromkey(lambda key: key)
         
         diaginfo = diaginfo or os.path.join(os.path.dirname(bpch_path), 'diaginfo.dat')
+        if not os.path.exists(diaginfo):
+            diaginfo = 'diaginfo.dat'
         if os.path.exists(diaginfo):
             if os.path.isdir(diaginfo): diaginfo = os.path.join(diaginfo, 'diaginfo.dat')
             diag_data = dict([(l[9:49].strip(), dict(offset = int(l[:8]), desc = l[50:].strip())) for l in file(diaginfo).read().strip().split('\n') if l[0] != '#'])
@@ -1004,6 +1008,7 @@ Examples:
                 title_str = ('%s (Time: %s, Layer: %s, Row: %s, Col: %s)' % (options.variable, time_str, layer_str, row_str, col_str)).replace('$', r'\$').replace('_', ' ').replace('slice(None)', 'all')
             fig = tileplot(f, toplot, maptype = maptype, vmin = vmin, vmax = vmax, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, title = title_str, log = options.log)
             fig.savefig(fig_path, dpi = 300)
+            f.close()
             print("Successfully created %s" % fig_path)
         except IOError, e:
             print("Unable to produce test figure (maybe you don't have matplotlib or basemap); " + str(e))
