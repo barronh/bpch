@@ -388,7 +388,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             header = self._memmap[key]['header'][0]
             sl, sj, si = header['f14'][::-1] - 1
             group = header['f7'].strip()
-            offset = self._diag_data[group]['offset']
+            offset = self._diag_data.get(group, {}).get('offset', 0)
             ord = header['f8'] + offset
             base_units = header['f9']
             scale = self._tracer_data[ord]['SCALE']
@@ -491,7 +491,8 @@ class bpch(PseudoNetCDFFile):
         self.toptitle = header[4]
         self.modelname, self.modelres, self.halfpolar, self.center180 = header[7:11]
         dummy, dummy, dummy, self.start_tau0, self.start_tau1, dummy, dim, dummy, dummy = header[13:-1]
-        self.dimensions = dict(zip('lon lat lev'.split(), dim))
+        for dk, dv in zip('lon lat lev'.split(), dim):
+            self.createDimension(dk, dv)
         self.createDimension('nv', 2)
         tracerinfo = tracerinfo or os.path.join(os.path.dirname(bpch_path), 'tracerinfo.dat')
         if os.path.exists(tracerinfo):
@@ -545,7 +546,7 @@ class bpch(PseudoNetCDFFile):
             else:
                 warn('%s is not in diaginfo.dat; names and scaling cannot be resolved' % group)
                 goffset = 0
-                tracername = tracer_number
+                tracername = str(tracer_number)
                 diag_data[group] = dict(offset = 0, desc = group)
                 tracer_data[tracer_number + goffset] = dict(SCALE = 1., C = 1., UNIT = unit)
 
@@ -772,7 +773,7 @@ def getvar(path_to_test_file = '', group_key = None, var_key = None):
     g = f.groups[group_key]
     
     if var_key is None:
-        var_names = g.variables.keys()
+        var_names = [k for k in g.variables.keys() if k not in ['crs', 'AREA', 'lat_bnds', 'lon', 'lon_bnds', 'tau0', 'tau1', 'lev', 'time', 'lat']]
         if len(var_names) == 1:
             var_key, = var_names
         else:
@@ -975,7 +976,7 @@ Examples:
     titles = pad(nplots, options.title, "titles", None)
     for time_str, layer_str, row_str, col_str, vmin, vmax, xmin, xmax, ymin, ymax, title_str, (fpath, f, group_key, var_key, var) in zip(times, layers, rows, cols, vmins, vmaxs, xmins, xmaxs, ymins, ymaxs, titles, plotfvars):
         try:
-            fig_path = ('%s_%s_%s_time%s_layer%s_row%s_col%s.png' % (fpath, group_key, var_key, time_str, layer_str, row_str, col_str)).replace('-$', '').replace('$', '').replace(' ', '').replace('slice(None)', 'all')
+            fig_path = ('%s_%s_%s_time%s_layer%s_row%s_col%s.png' % (os.path.basename(fpath), group_key, var_key, time_str, layer_str, row_str, col_str)).replace('-$', '').replace('$', '').replace(' ', '').replace('slice(None)', 'all')
             
             toplot = reduce_dim(var[:], time_str, axis = 0)
             toplot = reduce_dim(toplot, layer_str, axis = 1)
