@@ -640,7 +640,6 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
     # Example: spatial plotting
     from pylab import figure, colorbar, axis
     from matplotlib.colors import Normalize, LogNorm
-    import numpy as np
     has_map = False
     lat = np.append(f.variables['lat_bnds'][0, 0], f.variables['lat_bnds'][:, 1])
     lon = np.append(f.variables['lon_bnds'][0, 0], f.variables['lon_bnds'][:, 1])
@@ -683,6 +682,7 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
         y = np.arange(toplot.shape[0])
         if 'BXHGHT-$_BXHEIGHT' in f.variables.keys():
             y = np.cumsum(np.append(0, f.variables['BXHGHT-$_BXHEIGHT'].mean(0).mean(1).mean(1))) / 1000.
+            y = y[:toplot.shape[0]]
             ax.set_ylabel('km agl')
         else:
             ax.set_ylabel('layer')
@@ -693,6 +693,7 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
         ax.set_xticks(meridians)
         if 'BXHGHT-$_BXHEIGHT' in f.variables.keys():
             y = np.cumsum(np.append(0, f.variables['BXHGHT-$_BXHEIGHT'].mean(0).mean(1).mean(1))) / 1000.
+            y = y[:toplot.shape[0]]
             ax.set_ylabel('km')
         else:
             ax.set_ylabel('layer')
@@ -705,6 +706,7 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
         y = np.arange(toplot.shape[0])
         if 'BXHGHT-$_BXHEIGHT' in f.variables.keys():
             y = np.cumsum(np.append(0, f.variables['BXHGHT-$_BXHEIGHT'].mean(0).mean(1).mean(1))) / 1000.
+            y = y[:toplot.shape[0]]
             ax.set_ylabel('km')
         else:
             ax.set_ylabel('layer')
@@ -741,9 +743,10 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
     if vmin is None:
         vmin = np.ma.masked_values(toplot, 0).min()
     if log:
-        ticks = np.logspace((np.log10(vmin)), (np.log10(vmax)), 10.)
-        cb.set_ticks(ticks)
-        cb.set_ticklabels(['%.1f' % x for x in ticks])
+        if (np.log10(vmax) - np.log10(vmin)) < 4:
+            ticks = np.logspace((np.log10(vmin)), (np.log10(vmax)), 10.)
+            cb.set_ticks(ticks)
+            cb.set_ticklabels(['%.1f' % x for x in ticks])
     axis('tight')
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
@@ -779,7 +782,7 @@ def getvar(path_to_test_file = '', group_key = None, var_key = None):
                 var_key = raw_input('Enter a variable name: %s\n:' % ', '.join(map(str, var_names)))
 
     var = g.variables[int(var_key) if var_key.isdigit() else var_key]
-    return f, var
+    return f, group_key, var_key, var
 
 def pad(nplots, option, option_key, default):
     nopts = len(option)
@@ -847,43 +850,43 @@ Examples:
        layer with a log color-scale.
 
        $ python bpch.py -g IJ-AVG-$ -v O3  -t mean -l mean --log ctm.bpch
-       Successfully created ctm.bpch_O3_timemean_layermean_rowall_colall.png
+       Successfully created ctm.bpch_IJ-AVG_O3_timemean_layermean_rowall_colall.png
 
 
     2. This example produces a zonal mean, time average plot 
        stopping at 20km (if BOXHEIGHT available) or the 21st layer.
  
        $ python bpch.py -g IJ-AVG-$ -v O3 -t mean -c mean --ymax 20 ctm.bpch
-       Successfully created ctm.bpch_O3_timemean_layerall_rowall_colmean.png
+       Successfully created ctm.bpch_IJ-AVG_O3_timemean_layerall_rowall_colmean.png
 
     
     3. This example produces a 1st layer Latitude-Time Hovmoller Diagram. 
     
        $ python bpch.py -g IJ-AVG-$ -v O3 -l 0 -c mean ctm.bpch
-       Successfully created ctm.bpch_O3_timeall_layer0_rowall_colmean.png
+       Successfully created ctm.bpch_IJ-AVG_O3_timeall_layer0_rowall_colmean.png
 
 
     4. This example produces a 1st layer Longitude-Time Hovmoller Diagram. 
     
        $ python bpch.py -g IJ-AVG-$ -v O3 -l 0 -r mean ctm.bpch
-       Successfully created ctm.bpch_O3_timeall_layer0_rowmean_colall.png
+       Successfully created ctm.bpch_IJ-AVG_O3_timeall_layer0_rowmean_colall.png
 
     
     5. This example would produce two Ox figures. Both from 
        time 1 (default), but the first file from layer 1 and
        the second file from layer 2. The first figure has a 
-       minimum (max) value of 1 (2) and the second has a 
-       minimum (maximum) of 2 (3).
+       minimum (max) value of 20 (60) and the second has a 
+       minimum (maximum) of 25 (65).
 
        $ python bpch.py -g IJ-AVG-$ -v O3 -n 20 -x 60 -t 0 -l 0 -n 25 -x 65 -t 0 -l 1 ctm.bpch ctm.bpch2
-       Successfully created ctm.bpch_O3_time0_layer0_rowall_colall.png
+       Successfully created ctm.bpch_IJ-AVG_O3_time0_layer0_rowall_colall.png
        Successfully created ctm.bpch2_O3_time0_layer1_rowall_colall.png
 
        Successfully created ctm.bpch1_Ox_time0_layer0.png
        Successfully created ctm.bpch2_Ox_time0_layer1.png    
 
     6. This example would produce one Ox difference figure with 
-       a minimum of 1 and a maximum of 2.
+       a minimum of -2 and a maximum of 2.
 
        $ python bpch.py -d -g IJ-AVG-$ -v O3 -n -2 -x 2 -t 0 -l 0 ctm.bpch ctm.bpch2
        Successfully created ctm.bpch-ctm.bpch2-diff_O3_time0_layer0_rowall_colall.png
@@ -930,8 +933,8 @@ Examples:
     if options.difference or options.percent:
         fpath1 = args[0]
         fpath2 = args[1]        
-        f, var1 = getvar(fpath1, group_key = options.group, var_key = options.variable)
-        f2, var2 = getvar(fpath2, group_key = options.group, var_key = options.variable)
+        f, group_key, var_key, var1 = getvar(fpath1, group_key = options.group, var_key = options.variable)
+        f2, group_key2, var_key2, var2 = getvar(fpath2, group_key = options.group, var_key = options.variable)
         var_key = var1.long_name.strip() + ' - ' + var2.long_name.strip()
         if options.difference:
             var = var1[:] - var2[:]
@@ -951,7 +954,7 @@ Examples:
         elif options.percent:
             keyappend = 'pct'
         
-        plotfvars = [('%s-%s-%s' % (fpath1, fpath2, keyappend), f, var)]
+        plotfvars = [('%s-%s-%s' % (fpath1, fpath2, keyappend), f, group_key, var_key, var)]
     else:
         plotfvars = [(fpath,) + getvar(fpath, group_key = options.group, var_key = options.variable) for fpath in args]
     nplots = len(plotfvars)
@@ -970,9 +973,9 @@ Examples:
     ymins = pad(nplots, options.ymin, "ymin", None)
     ymaxs = pad(nplots, options.ymax, "ymax", None)
     titles = pad(nplots, options.title, "titles", None)
-    for time_str, layer_str, row_str, col_str, vmin, vmax, xmin, xmax, ymin, ymax, title_str, (fpath, f, var) in zip(times, layers, rows, cols, vmins, vmaxs, xmins, xmaxs, ymins, ymaxs, titles, plotfvars):
+    for time_str, layer_str, row_str, col_str, vmin, vmax, xmin, xmax, ymin, ymax, title_str, (fpath, f, group_key, var_key, var) in zip(times, layers, rows, cols, vmins, vmaxs, xmins, xmaxs, ymins, ymaxs, titles, plotfvars):
         try:
-            fig_path = ('%s_%s_time%s_layer%s_row%s_col%s.png' % (fpath, options.variable, time_str, layer_str, row_str, col_str)).replace('$', '').replace(' ', '').replace('slice(None)', 'all')
+            fig_path = ('%s_%s_%s_time%s_layer%s_row%s_col%s.png' % (fpath, group_key, var_key, time_str, layer_str, row_str, col_str)).replace('-$', '').replace('$', '').replace(' ', '').replace('slice(None)', 'all')
             
             toplot = reduce_dim(var[:], time_str, axis = 0)
             toplot = reduce_dim(toplot, layer_str, axis = 1)
