@@ -1,5 +1,8 @@
 *.png
 *.py[cod]
+ctm.bpch*
+tracerinfo.dat
+diaginfo.dat
 
 # C extensions
 *.so
