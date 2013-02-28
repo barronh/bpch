@@ -15,7 +15,9 @@ Prerequisites
  * mpl_toolkits.basemap >= 1.0<sup>`***`<sup>
 
 <sup>`*`</sup>Linux is not actually required; Windows and Mac versions have been used. They are not supported.
+
 <sup>`**`</sup>matplotlib is only required for plotting
+
 <sup>`***`</sup>basemap is used only if available to add geopolitical boundaries to lat-lon plots.
 
 Prerequisites via EPD
