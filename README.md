@@ -3,11 +3,45 @@ bpch
 
 GEOS-Chem Binary Punch File Reader/Plotter/ncdumper
 
+The python-based library for Binary Punch files is designed to provide NetCDF-like access to data in Binary Punch files. In addition, it can be used to produce plots.
+
+Prerequisites
+-------------
+
+Linux
+Python >= 2.7
+numpy >= 1.5
+matplotlib >= 1.0**
+mpl_toolkits.basemap >= 1.0***
+
+*Linux is not actually required; Windows and Mac versions have been used. They are not supported.
+**matplotlib is only required for plotting
+***basemap is used only if available to add geopolitical boundaries to lat-lon plots.
+
+Prerequisites via EPD
+---------------------
+This is the easiest way to get going. All of these prerequisites are available via the <a href=http://www.enthought.com/products/epd.php>Enthought Python Distribution</a> (EPD). EPD is free for academics, but the edX version is not sufficient (unless combined with virtualenv instructions below). 
+
+
+Prerequisites via virtualenv
+----------------------------
+If you have a working version of Python 2.7 (works with 2.5, but not supported) but you don't have root access to install, then I recommend you use <a href=https://pypi.python.org/pypi/virtualenv>virtualenv</a> by downloading <a href=https://raw.github.com/pypa/virtualenv/master/virtualenv.py>virtualenv.py</a>. The commands below setting up virtualenv and installing prerequisites:
+
+```
+cd ~
+curl -LO https://raw.github.com/pypa/virtualenv/master/virtualenv.py
+python virtualenv.py aqc
+source aqc/bin/activate
+pip install numpy
+pip install matplotlib
+pip install basemap
+```
+
+Any time you want to use bpch, you'll need to activate virtualenv by running `source bpch/bin/activate`. You'll need to `source bpch/bin/activate`.
+
 Example Plotting
 ----------------
 
-Examples:  
-    
 1. This example produce a Lat-Lon, time average, mean layer with a log color-scale.
 
     ```
@@ -50,3 +84,20 @@ Examples:
     $ python bpch.py -d -g IJ-AVG-$ -v O3 -n -2 -x 2 -t 0 -l 0 ctm.bpch ctm.bpch2
     Successfully created ctm.bpch-ctm.bpch2-diff_IJ-AVG_O3_time0_layer0_rowall_colall.png
     ```
+
+Example Python
+--------------
+```
+from bpch import bpch
+
+bcfile = bpch('ctm.bpch')
+print gcfile.groups.keys()
+group = bcfile.groups['IJ-AVG-$']
+print group.variables.keys()
+ozone = group.variables['O3']
+print ozone.dimensions
+print ozone.units
+print ozone.mean(0).reshape(ozone.shape[1], -1).mean(1)
+...
+
+```
