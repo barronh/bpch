@@ -8,15 +8,15 @@ The python-based library for Binary Punch files is designed to provide NetCDF-li
 Prerequisites
 -------------
 
-Linux
-Python >= 2.7
-numpy >= 1.5
-matplotlib >= 1.0**
-mpl_toolkits.basemap >= 1.0***
+ * Linux<sup>`*`<sup>
+ * Python >= 2.7
+ * numpy >= 1.5
+ * matplotlib >= 1.0<sup>`**`<sup>
+ * mpl_toolkits.basemap >= 1.0<sup>`***`<sup>
 
-*Linux is not actually required; Windows and Mac versions have been used. They are not supported.
-**matplotlib is only required for plotting
-***basemap is used only if available to add geopolitical boundaries to lat-lon plots.
+<sup>`*`<sup>Linux is not actually required; Windows and Mac versions have been used. They are not supported.
+<sup>`**`<sup>matplotlib is only required for plotting
+<sup>`***`<sup>basemap is used only if available to add geopolitical boundaries to lat-lon plots.
 
 Prerequisites via EPD
 ---------------------
