@@ -802,6 +802,8 @@ def pad(nplots, option, option_key, default):
     return option
 
 def reduce_dim(toplot, eval_str, axis):
+    if eval_str == 'animate':
+        return toplot
     if eval_str in dir(np):
         toplot = getattr(np, eval_str)(toplot[:], axis = axis)[(slice(None),) * axis + (None,)]
     elif eval_str.isdigit():
@@ -840,9 +842,11 @@ is repeated for each bpchpath
 options. If an integer is provided, a single slice of that 
 dimensions is taken using 0-based index (i.e., the first time 
 is time 0). If a function is provided, it will be applied to 
-that dimension (e.g., mean, median, max, min, std...). If any 
-other value is provided, it will be converted to a python object 
-and be used to acquire a "slice."
+that dimension (e.g., mean, median, max, min, std...). If a non-function 
+value is provided, it will be converted to a python object 
+and be used to acquire a "slice." A special case is "animate" which will
+produce mp4 files instead of png files. "animate" requires that you have
+a working installation of ffmpeg.
 
 
 **Time is processed before layer, layer is processed before row, 
@@ -895,6 +899,11 @@ Examples:
 
        $ python bpch.py -d -g IJ-AVG-$ -v O3 -n -2 -x 2 -t 0 -l 0 ctm.bpch ctm.bpch2
        Successfully created ctm.bpch-ctm.bpch2-diff_O3_time0_layer0_rowall_colall.png
+
+    7. This example would produce one O3 animation across time
+
+       $ python bpch.py -d -g IJ-AVG-$ -v O3 -t animate -l 0 ctm.bpch
+       Successfully created ctm.bpch_O3_timeanimation_layer0_rowall_colall.mp4
 """)
     parser.set_usage("Usage: python bpch.py [-dpnx] [-t TIME] [-l LAYER] [-r ROW] [-c COL] [-g GROUP] [-v VARIABLE] [--title=TITLE] [bpchpath1 [bpchpath2 ... bpchpathN]]")
     parser.add_option("-d", "--difference", dest="difference",action="store_true",default=False,
@@ -928,7 +937,13 @@ Examples:
 
     parser.add_option("-c", "--column", dest = "column", type = "string", action = "append", default = [],
                         help = "bpch variables has rows for latitudes and plotting currently only supports single row slices, or aggregate operations (mean, sum, median, min, max, etc).")
-        
+
+    parser.add_option("", "--format", dest="format", type="string", default="png", help = "Sets the output format (png, pdf, etc.)")
+
+    parser.add_option("", "--dpi", dest="dpi", type="int", default=300, help = "Sets the dots per inch for output figures.")
+
+    parser.add_option("", "--frames-per-second", dest="fps", type="float", default=0.5, help = "Used in combination with animate on time, layer, row, or column to regulate the number of frames per second.")
+
 
     (options, args) = parser.parse_args()
     nfiles = len(args)
@@ -980,7 +995,7 @@ Examples:
     titles = pad(nplots, options.title, "titles", None)
     for time_str, layer_str, row_str, col_str, vmin, vmax, xmin, xmax, ymin, ymax, title_str, (fpath, f, group_key, var_key, var) in zip(times, layers, rows, cols, vmins, vmaxs, xmins, xmaxs, ymins, ymaxs, titles, plotfvars):
         try:
-            fig_path = ('%s_%s_%s_time%s_layer%s_row%s_col%s.png' % (os.path.basename(fpath), group_key, var_key, time_str, layer_str, row_str, col_str)).replace('-$', '').replace('$', '').replace(' ', '').replace('slice(None)', 'all')
+            fig_path = ('%s_%s_%s_time%s_layer%s_row%s_col%s.%s' % (os.path.basename(fpath), group_key, var_key, time_str, layer_str, row_str, col_str, options.format)).replace('-$', '').replace('$', '').replace(' ', '').replace('slice(None)', 'all')
             
             toplot = reduce_dim(var[:], time_str, axis = 0)
             toplot = reduce_dim(toplot, layer_str, axis = 1)
@@ -1001,13 +1016,37 @@ Examples:
             else:
                 print toplot.shape
             
-            toplot = toplot.squeeze()
-            if toplot.ndim > 2:
+            anim_idx = None
+            if 'animate' in (time_str, layer_str, row_str, col_str):
+                anim_idx = [time_str, layer_str, row_str, col_str].index('animate')
+            elif toplot.squeeze().ndim > 2:
                 raise UserWarning("Cannot create plot with more than 2 dimensions;\n\tUse the -t, -l, -r, -c options to reduce dimensions.")
+            else:
+                toplot = toplot.squeeze()
+
             if title_str is None:
                 title_str = ('%s (Time: %s, Layer: %s, Row: %s, Col: %s)' % (options.variable, time_str, layer_str, row_str, col_str)).replace('$', r'\$').replace('_', ' ').replace('slice(None)', 'all')
-            fig = tileplot(f, toplot, maptype = maptype, vmin = vmin, vmax = vmax, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, title = title_str, log = options.log)
-            fig.savefig(fig_path, dpi = 300)
+            if anim_idx is not None:
+                from pylab import figure, draw
+                from matplotlib.animation import FuncAnimation
+                fig_path = fig_path.replace('.png', '.mp4')
+                fig = tileplot(f, toplot[(slice(None),) * anim_idx + (0,)].squeeze(), maptype = maptype, vmin = vmin, vmax = vmax, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, title = title_str, log = options.log)
+                def getframe(i):
+                    fig.axes[0].collections[-1].set_array(toplot[(slice(None),) * anim_idx + (i,)].ravel())
+                    draw()
+                    #fig.savefig(fig_path.replace('.mp4', '.%d.%s' % (i, options.format), dpi = options.dpi)
+                animo = FuncAnimation(fig, getframe, frames = np.arange(toplot.shape[anim_idx]), interval = 1, blit = True)
+                try:
+                    animo.save(fig_path, codec = 'libmpeg', fps = .25)
+                except IOError as e:
+                    print str(e)
+                    print 
+                    print "-----------------------------"
+                    print "Do you have ffmpeg installed?"
+            else:
+                fig = tileplot(f, toplot, maptype = maptype, vmin = vmin, vmax = vmax, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, title = title_str, log = options.log)
+                fig.savefig(fig_path, dpi = options.dpi)
+                
             f.close()
             print("Successfully created %s" % fig_path)
         except IOError, e:
