@@ -10,6 +10,7 @@ from warnings import warn
 import numpy as np
 from numpy import ndarray, fromfile, memmap, dtype, arange, zeros, ceil, diff, concatenate, append, pi, sin
 
+from matplotlib import use
 # PseudoNetCDF is my own home grown
 # https://dawes.sph.unc.edu/trac/PseudoNetCDF
 #from PseudoNetCDF import PseudoNetCDFVariable, PseudoNetCDFFile
@@ -641,7 +642,7 @@ class bpch(PseudoNetCDFFile):
     def __repr__(self):
         return PseudoNetCDFFile.__repr__(self) + str(self.variables)
 
-def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin = None, ymax = None, title = '', unit = '', maptype = 0, log = False):
+def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin = None, ymax = None, title = '', unit = '', maptype = 0, log = False, cmap = None):
     # Example: spatial plotting
     from pylab import figure, colorbar, axis
     from matplotlib.colors import Normalize, LogNorm
@@ -677,8 +678,8 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
             m.drawmeridians(meridians)
         x = lon
         y = lat
-        ax.set_xticks(meridians)
-        ax.set_yticks(parallels)
+        ax.set_xticks(meridians[::2])
+        ax.set_yticks(parallels[::2])
         ax.set_xlim(meridians.min(), meridians.max())
         ax.set_ylim(parallels.min(), parallels.max())
     elif maptype == 1:
@@ -739,7 +740,7 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
         ax.set_yticks(np.linspace(y[0], y[-1], min(len(y), len(ax.get_yticks()))))
         ax.set_ylabel('days since %s' % start_date.strftime('%Y%m%dT%H%M%S'))
     
-    poly = m.pcolor(x, y, toplot)
+    poly = m.pcolor(x, y, toplot, cmap = cmap)
     ax.collections[-1].set_norm((LogNorm if log else Normalize)(vmin = vmin, vmax = vmax))
     cb = colorbar(poly, ax = ax)
     cb.ax.set_xlabel(toplot.units.strip())
@@ -811,7 +812,10 @@ def reduce_dim(toplot, eval_str, axis):
         toplot = np.take(toplot, [eval_idx], axis = axis)
     else:
         eval_idx = eval(eval_str)
-        toplot = toplot[(slice(None),) * axis + (eval_idx,)]
+        if isinstance(eval_idx, tuple) and len(eval_idx) == 3:
+            toplot = getattr(np, eval_idx[0])(toplot[(slice(None),) * axis + (slice(eval_idx[1], eval_idx[2]),)], axis = axis)[(slice(None),) * axis + (None,)]
+        else:
+            toplot = toplot[(slice(None),) * axis + (eval_idx,)]
     return toplot
 
 def run():
@@ -919,6 +923,7 @@ Examples:
     parser.add_option("", "--xmax", dest = "xmax", type = "float", action = 'append', default = [], help = "Maximum for the x-axis")
     parser.add_option("", "--ymin", dest = "ymin", type = "float", action = 'append', default = [], help = "Minimum for the y-axis")
     parser.add_option("", "--ymax", dest = "ymax", type = "float", action = 'append', default = [], help = "Maximum for the y-axis")
+    parser.add_option("", "--backend", dest = "backend", type = "string", default = 'Agg', help = "Set the backend for use. See matplotlib for more details.")
     parser.add_option("", "--log", dest = "log", action = "store_true", default = False, help = "Put data on a log scale.")
     parser.add_option("-g", "--group", dest = "group", default = None,
                         help = "bpch variables are organized into groups whose names are defined in diaginfo.dat; for a list simply do not provide the group and you will be prompted.")
@@ -940,12 +945,21 @@ Examples:
 
     parser.add_option("", "--format", dest="format", type="string", default="png", help = "Sets the output format (png, pdf, etc.)")
 
+    parser.add_option("", "--mhchem", dest="mhchem", action = "store_true", default = False, help = "Use the mhchem latex options for typesetting.")
+
+    parser.add_option("", "--latex", dest="latex", action = "store_true", default = False, help = "Use the latex options for typesetting.")
+
     parser.add_option("", "--dpi", dest="dpi", type="int", default=300, help = "Sets the dots per inch for output figures.")
+
+    parser.add_option("", "--cmap", dest="cmap", type="string", default='jet', help = "Sets cmap property of tile plots. See matplotlib for more details. Good options (jet, bwr)")
 
     parser.add_option("", "--frames-per-second", dest="fps", type="float", default=0.5, help = "Used in combination with animate on time, layer, row, or column to regulate the number of frames per second.")
 
 
     (options, args) = parser.parse_args()
+    use(options.backend)
+    from pylab import rcParams
+    rcParams['text.usetex'] = options.latex | options.mhchem
     nfiles = len(args)
     if nfiles == 0:
         parser.print_help()
@@ -974,7 +988,7 @@ Examples:
         elif options.percent:
             keyappend = 'pct'
         
-        plotfvars = [('%s-%s-%s' % (fpath1, fpath2, keyappend), f, group_key, var_key, var)]
+        plotfvars = [('%s-%s-%s' % (os.path.basename(fpath1), os.path.basename(fpath2), keyappend), f, '', var_key, var)]
     else:
         plotfvars = [(fpath,) + getvar(fpath, group_key = options.group, var_key = options.variable) for fpath in args]
     nplots = len(plotfvars)
@@ -993,6 +1007,7 @@ Examples:
     ymins = pad(nplots, options.ymin, "ymin", None)
     ymaxs = pad(nplots, options.ymax, "ymax", None)
     titles = pad(nplots, options.title, "titles", None)
+    
     for time_str, layer_str, row_str, col_str, vmin, vmax, xmin, xmax, ymin, ymax, title_str, (fpath, f, group_key, var_key, var) in zip(times, layers, rows, cols, vmins, vmaxs, xmins, xmaxs, ymins, ymaxs, titles, plotfvars):
         try:
             fig_path = ('%s_%s_%s_time%s_layer%s_row%s_col%s.%s' % (os.path.basename(fpath), group_key, var_key, time_str, layer_str, row_str, col_str, options.format)).replace('-$', '').replace('$', '').replace(' ', '').replace('slice(None)', 'all')
@@ -1023,28 +1038,34 @@ Examples:
                 raise UserWarning("Cannot create plot with more than 2 dimensions;\n\tUse the -t, -l, -r, -c options to reduce dimensions.")
             else:
                 toplot = toplot.squeeze()
-
+            var_label = var_key
+            if options.mhchem:
+                var_label = r'\ce{%s}' % var_label
+                
             if title_str is None:
-                title_str = ('%s (Time: %s, Layer: %s, Row: %s, Col: %s)' % (options.variable, time_str, layer_str, row_str, col_str)).replace('$', r'\$').replace('_', ' ').replace('slice(None)', 'all')
+                title_str = ('%s (Time: %s, Layer: %s, Row: %s, Col: %s)' % (var_label, time_str, layer_str, row_str, col_str)).replace('$', r'\$').replace('_', ' ').replace('slice(None)', 'all')
             if anim_idx is not None:
                 from pylab import figure, draw
                 from matplotlib.animation import FuncAnimation
                 fig_path = fig_path.replace('.png', '.mp4')
-                fig = tileplot(f, toplot[(slice(None),) * anim_idx + (0,)].squeeze(), maptype = maptype, vmin = vmin, vmax = vmax, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, title = title_str, log = options.log)
+                fig = tileplot(f, toplot[(slice(None),) * anim_idx + (0,)].squeeze(), maptype = maptype, vmin = vmin, vmax = vmax, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, title = title_str, log = options.log, cmap = options.cmap)
                 def getframe(i):
                     fig.axes[0].collections[-1].set_array(toplot[(slice(None),) * anim_idx + (i,)].ravel())
                     draw()
-                    #fig.savefig(fig_path.replace('.mp4', '.%d.%s' % (i, options.format), dpi = options.dpi)
-                animo = FuncAnimation(fig, getframe, frames = np.arange(toplot.shape[anim_idx]), interval = 1, blit = True)
                 try:
+                    animo = FuncAnimation(fig, getframe, frames = np.arange(toplot.shape[anim_idx]), interval = 1, blit = True)
                     animo.save(fig_path, codec = 'libmpeg', fps = .25)
-                except IOError as e:
+                except IOError, e:
                     print str(e)
                     print 
                     print "-----------------------------"
                     print "Do you have ffmpeg installed?"
+                    if raw_input("Should I continue creating %s files for each frame (y/n)?\n:" % options.format).lower() == 'y':
+                        for i in np.arange(toplot.shape[anim_idx]):
+                            getframe(i)
+                            fig.savefig(fig_path.replace('.mp4', '.%d.%s' % (i, options.format)), dpi = options.dpi)
             else:
-                fig = tileplot(f, toplot, maptype = maptype, vmin = vmin, vmax = vmax, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, title = title_str, log = options.log)
+                fig = tileplot(f, toplot, maptype = maptype, vmin = vmin, vmax = vmax, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, title = title_str, log = options.log, cmap = options.cmap)
                 fig.savefig(fig_path, dpi = options.dpi)
                 
             f.close()
