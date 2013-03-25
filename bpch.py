@@ -1,6 +1,7 @@
 __all__ = ['bpch']
 
 import os
+import gc
 
 # part of the default Python distribution
 from collections import defaultdict
@@ -123,7 +124,7 @@ class PseudoNetCDFVariable(ndarray):
             result.__dict__['typecode'] = lambda: typecode
             result.__dict__['dimensions'] = tuple(dimensions)
         else:
-            result.__dict__={
+            result.__dict__ = {
                 'typecode': lambda: typecode,
                 'dimensions': tuple(dimensions)
             }
@@ -141,7 +142,10 @@ class PseudoNetCDFVariable(ndarray):
         if hasattr(obj, '_ncattrs'):
             for k in obj._ncattrs:
                 setattr(self, k, getattr(obj, k))
-        
+        if not hasattr(self, 'dimensions'):
+            if hasattr(obj, 'dimensions'):
+                setattr(self, 'dimensions', obj.dimensions)
+                self._ncattrs = self._ncattrs[:-1]
     
     def getValue(self):
         """
@@ -271,7 +275,7 @@ class _diag_group(PseudoNetCDFFile):
             except (KeyError, ValueError):
                 return parent.variables[key]
         self._parent = parent
-        self.variables = defaultpseudonetcdfvariable(list(groupvariables) + ['time', 'lev', 'tau0', 'tau1', 'crs', 'AREA', 'lat', 'lon', 'lat_bnds', 'lon_bnds'], getvar)
+        self.variables = defaultpseudonetcdfvariable(list(groupvariables) + metakeys, getvar)
     
     def __getattr__(self, key):
         try:
@@ -298,8 +302,8 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
         self._diag_data = diaginfo
         self._memmap = datamap
         self._parent = parent
-        self._special_keys = ['time', 'lev', 'tau0', 'tau1', 'crs', 'lat', 'lon', 'lat_bnds', 'lon_bnds']
-        self._keys = keys + self._special_keys
+        self._special_keys = set(metakeys)
+        self._keys = set(keys).union(self._special_keys)
         self._example_key = keys[0]
         
     def __missing__(self, key):
@@ -360,26 +364,30 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
                       inverse_flattening = 0)
           dtype = 'i'
           data = zeros(1, dtype = dtype)
-        elif key == 'time':
-            tmp_key = self._keys[0]
-            data = self._memmap[tmp_key]['header']['f10'] + .5
-            dims = ('time',)
+        elif key in ('time', 'time_bnds'):
+            tmp_key = self._example_key
+            data = np.array([self['tau0'], self['tau1']]).T
+            dims = ('time', 'nv')
+            if key == 'time':
+                data = data.mean(1)
+                dims = ('time',)
+            
             dtype = 'i'
-            kwds = dict(units = 'hours since 0 GMT 1/1/1985', standard_name = key, long_name = key, var_desc = key)
+            kwds = dict(units = 'hours since 2001-07-22 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
         elif key == 'lev':
-            tmp_key = self._keys[0]
-            data = arange(self._parent.dimensions['lev'], dtype = 'i')
+            tmp_key = self._example_key
+            data = arange(len(self._parent.dimensions['lev']), dtype = 'i')
             dims = ('lev',)
             dtype = 'i'
-            kwds = dict(units = 'model layer', standard_name = key, long_name = key, var_desc = key)
+            kwds = dict(units = 'layer', standard_name = 'atmosphere_hybrid_sigma_pressure_coordinate', long_name = key, var_desc = key, axis = "Z")
         elif key == 'tau0':
-            tmp_key = self._keys[0]
+            tmp_key = self._example_key
             data = self._memmap[tmp_key]['header']['f10']
             dims = ('time',)
             dtype = 'i'
             kwds = dict(units = 'hours since 0 GMT 1/1/1985', standard_name = key, long_name = key, var_desc = key)
         elif key == 'tau1':
-            tmp_key = self._keys[0]
+            tmp_key = self._example_key
             data = self._memmap[tmp_key]['header']['f11']
             dims = ('time',)
             dtype = 'i'
@@ -422,7 +430,10 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
                 kwds['STARTJ'] = sj
                 kwds['STARTK'] = sl
         return PseudoNetCDFVariable(self._parent, key, dtype, dims, values = data, **kwds)
-            
+
+coordkeys = 'time lat lon lev lat_bnds lon_bnds crs'.split()            
+metakeys = ['AREA', 'tau0', 'tau1', 'time_bnds'] + coordkeys
+
 class bpch(PseudoNetCDFFile):
     """
     NetCDF-like class to interface with GEOS-Chem binary punch files
@@ -778,7 +789,7 @@ def getvar(path_to_test_file = '', group_key = None, var_key = None):
     g = f.groups[group_key]
     
     if var_key is None:
-        var_names = [k for k in g.variables.keys() if k not in ['crs', 'AREA', 'lat_bnds', 'lon', 'lon_bnds', 'tau0', 'tau1', 'lev', 'time', 'lat']]
+        var_names = [k for k in g.variables.keys() if k not in metakeys]
         if len(var_names) == 1:
             var_key, = var_names
         else:
@@ -802,21 +813,21 @@ def pad(nplots, option, option_key, default):
             option = option + [default] * (nplots - nopts)
     return option
 
-def reduce_dim(toplot, eval_str, axis):
+def reduce_dim(var, eval_str, axis):
     if eval_str == 'animate':
-        return toplot
+        return var
     if eval_str in dir(np):
-        toplot = getattr(np, eval_str)(toplot[:], axis = axis)[(slice(None),) * axis + (None,)]
+        var = getattr(np, eval_str)(var[:], axis = axis)[(slice(None),) * axis + (None,)]
     elif eval_str.isdigit():
         eval_idx = int(eval_str)
-        toplot = np.take(toplot, [eval_idx], axis = axis)
+        var = np.take(var, [eval_idx], axis = axis)
     else:
         eval_idx = eval(eval_str)
         if isinstance(eval_idx, tuple) and len(eval_idx) == 3:
-            toplot = getattr(np, eval_idx[0])(toplot[(slice(None),) * axis + (slice(eval_idx[1], eval_idx[2]),)], axis = axis)[(slice(None),) * axis + (None,)]
+            var = getattr(np, eval_idx[0])(var[(slice(None),) * axis + (slice(eval_idx[1], eval_idx[2]),)], axis = axis)[(slice(None),) * axis + (None,)]
         else:
-            toplot = toplot[(slice(None),) * axis + (eval_idx,)]
-    return toplot
+            var = var[(slice(None),) * axis + (eval_idx,)]
+    return var
 
 def run():
     from optparse import OptionParser
@@ -966,8 +977,10 @@ Examples:
         exit()
     if options.difference or options.percent:
         fpath1 = args[0]
-        fpath2 = args[1]        
+        fpath2 = args[1]
         f, group_key, var_key, var1 = getvar(fpath1, group_key = options.group, var_key = options.variable)
+        del f
+        gc.collect()
         f2, group_key2, var_key2, var2 = getvar(fpath2, group_key = options.group, var_key = options.variable)
         var_key = var1.long_name.strip() + ' - ' + var2.long_name.strip()
         if options.difference:
