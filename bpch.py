@@ -83,10 +83,17 @@ class PseudoNetCDFVariable(ndarray):
     without adding it to the parent file
     """
     def __setattr__(self, k, v):
+        """
+        Set attributes (aka properties) and identify user-defined attributes.
+        """
         if not hasattr(self, k) and k[:1] != '_':
             self._ncattrs += (k,)
         ndarray.__setattr__(self, k, v)
     def ncattrs(self):
+        """
+        Returns a tuple of attributes that have been user defined
+        """
+        
         return self._ncattrs
     def __new__(subtype,parent,name,typecode,dimensions,**kwds):
         """
@@ -136,6 +143,9 @@ class PseudoNetCDFVariable(ndarray):
         return result
 
     def __array_finalize__(self, obj):
+        """
+        finalization involves propagating features through opertations.
+        """
         assert(hasattr(self, '_ncattrs') == False)
         self._ncattrs = ()
         if obj is None: return
@@ -198,34 +208,58 @@ class defaultdictfromthesekeys(defaultdict):
         defaultdict.__init__(self, default_factory)
     
     def __iter__(self):
+        """
+        Just like dictionary, but iterates through pre-defined keys
+        """
         for i in self._keys:
             yield i
             
     def iterkeys(self):
+        """
+        Just like dictionary, but iterates through pre-defined keys
+        """
         for i in self._keys:
             yield i
     
     def itervalues(self):
+        """
+        Just like dictionary, but iterates through pre-defined key values
+        """
         for k in self.iterkeys():
             yield self[k]
     
     def iteritems(self):
+        """
+        Just like dictionary, but iterates through pre-defined keys and their calculated values
+        """
         for k in self.iterkeys():
             yield (k, self[k])
     
     def keys(self):
+        """
+        Just like dictionary, but iterates through pre-defined keys
+        """
         return [k for k in self]
     
     def __setitem__(self, key, value):
+        """
+        Add value with key and add to pre-defined keys
+        """
         val = defaultdict.__setitem__(self, key, value)
         self._keys.add(key)
         return val
     
     def __delitem__(self, key):
+        """
+        Delete value with key and remove pre-defined key
+        """
         self._keys.discard(key)
         return defaultdict.__delitem__(self, key)
     
     def pop(self, key):
+        """
+        Pop value with key and remove pre-defined key
+        """
         val = defaultdict.pop(self, key)
         self._keys.discard(key)
         return val
@@ -241,9 +275,6 @@ class defaultdictfromthesekeys(defaultdict):
             return self.default_factory(key)
         else:
             raise KeyError("%s not found" % (key, ))
-
-    for k in '__setitem__ __delitem__ pop __iter__ iterkeys itervalues iteritems keys'.split():
-        exec('%s.__doc__ = defaultdict.%s.__doc__' % (k, k))
 
 class defaultpseudonetcdfvariable(defaultdictfromthesekeys):
     """
@@ -354,7 +385,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
            latr = pi / 180. * latb
            data = 2. * pi * Re * Re / (nlon) * ( sin( latr[1:] ) - sin( latr[:-1] ) )
            data = data[:, None].repeat(lon.size, 1)
-           kwds = dict(units = 'm**2')
+           kwds = dict(units = 'm**2', grid_mapping = "crs")
            dtype = 'i'
            dims = ('J', 'I')
         elif key == 'crs':
@@ -379,7 +410,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             data = arange(len(self._parent.dimensions['lev']), dtype = 'i')
             dims = ('lev',)
             dtype = 'i'
-            kwds = dict(units = 'layer', standard_name = 'atmosphere_hybrid_sigma_pressure_coordinate', long_name = key, var_desc = key, axis = "Z")
+            kwds = dict(units = 'model layer', standard_name = 'atmosphere_hybrid_sigma_pressure_coordinate', long_name = key, var_desc = key, axis = "Z")
         elif key == 'tau0':
             tmp_key = self._example_key
             data = self._memmap[tmp_key]['header']['f10']
@@ -403,7 +434,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             scale = self._tracer_data[ord]['SCALE']
             carbon = self._tracer_data[ord]['C']
             units = self._tracer_data[ord]['UNIT']
-            kwds = dict(scale = scale, carbon = carbon, units = units, base_units = base_units, standard_name = key, long_name = key, var_desc = key, coordinates = "time lev lat lon")
+            kwds = dict(scale = scale, carbon = carbon, units = units, base_units = base_units, standard_name = key, long_name = key, var_desc = key, coordinates = "time lev lat lon", grid_mapping = "crs")
             tmp_data = self._memmap[key]['data']
             dims = ('time', 'lev', 'lat', 'lon')
             if len(['lev' in dk_ for dk_ in self._parent.dimensions]) > 1:
@@ -753,17 +784,20 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
     
     poly = m.pcolor(x, y, toplot, cmap = cmap)
     ax.collections[-1].set_norm((LogNorm if log else Normalize)(vmin = vmin, vmax = vmax))
-    cb = colorbar(poly, ax = ax)
-    cb.ax.set_xlabel(toplot.units.strip())
-    if vmax is None:
-        vmax = toplot.max()
-    if vmin is None:
-        vmin = np.ma.masked_values(toplot, 0).min()
-    if log:
-        if (np.log10(vmax) - np.log10(vmin)) < 4:
-            ticks = np.logspace((np.log10(vmin)), (np.log10(vmax)), 10.)
-            cb.set_ticks(ticks)
-            cb.set_ticklabels(['%.1f' % x for x in ticks])
+    try:
+        cb = colorbar(poly, ax = ax)
+        cb.ax.set_xlabel(toplot.units.strip())
+        if vmax is None:
+            vmax = toplot.max()
+        if vmin is None:
+            vmin = np.ma.masked_values(toplot, 0).min()
+        if log:
+            if (np.log10(vmax) - np.log10(vmin)) < 4:
+                ticks = np.logspace((np.log10(vmin)), (np.log10(vmax)), 10.)
+                cb.set_ticks(ticks)
+                cb.set_ticklabels(['%.1f' % x for x in ticks])
+    except:
+        pass
     axis('tight')
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
@@ -776,7 +810,8 @@ def getvar(path_to_test_file = '', group_key = None, var_key = None):
     while f is None:
         try:
             f = bpch(path_to_test_file)
-        except:
+        except Exception as e:
+            print path_to_test_file, str(e)
             path_to_test_file = raw_input('Enter path to a valid GEOS-Chem file\n:')
     if group_key is None:
         group_names = f.groups.keys()
@@ -798,7 +833,10 @@ def getvar(path_to_test_file = '', group_key = None, var_key = None):
             while var_key not in var_names:
                 var_key = raw_input('Enter a variable name: %s\n:' % ', '.join(map(str, var_names)))
 
-    var = g.variables[int(var_key) if var_key.isdigit() else var_key]
+    try:
+       var = g.variables[var_key]
+    except:
+       var = g.variables[int(var_key) if var_key.isdigit() else var_key]
     return f, group_key, var_key, var
 
 def pad(nplots, option, option_key, default):
@@ -829,7 +867,188 @@ def reduce_dim(var, eval_str, axis):
             var = var[(slice(None),) * axis + (eval_idx,)]
     return var
 
+def slice_dim(f, slicedef, fuzzydim = True):
+    slicedef = slicedef.split(',')
+    slicedef = [slicedef[0]] + map(eval, slicedef[1:])
+    if len(slicedef) == 2:
+        slicedef.append(slicedef[-1] + 1)
+    slicedef = (slicedef + [None,])[:4]
+    dimkey, dmin, dmax, dstride = slicedef    
+    if fuzzydim:
+        partial_check = [key for key in f.dimensions if dimkey == key[:len(dimkey)] and key[len(dimkey):].isdigit()]
+        for dimk in partial_check:
+            f = slice_dim(f, '%s,%s,%s,%s' % (dimk, dmin, dmax, dstride))
+        
+    
+    for varkey in f.variables.keys():
+        var = f.variables[varkey]
+        if dimkey not in var.dimensions:
+            continue
+        else:
+            thisdimkey = dimkey
+        axis = list(var.dimensions).index(dimkey)
+        vout = var[:].swapaxes(0, axis)[dmin:dmax:dstride].swapaxes(0, axis)
+        
+        newlen = vout.shape[axis]
+        f.createDimension(dimkey, newlen)
+        f.variables[varkey] = vout
+    return f
+    
+def reduce_dim(f, reducedef, fuzzydim = True):
+    dimkey, func = reducedef.split(',')
+    if fuzzydim:
+        partial_check = [key for key in f.dimensions if dimkey == key[:len(dimkey)] and key[len(dimkey):].isdigit()]
+        for dimk in partial_check:
+            f = reduce_dim(f, '%s,%s' % (dimk, func),)
+    
+    f.createDimension(dimkey, 1)
+    for varkey in f.variables.keys():
+        var = f.variables[varkey]
+        if dimkey not in var.dimensions:
+            continue
+        
+        axis = list(var.dimensions).index(dimkey)
+        if '_bnds' not in varkey:
+            vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
+        else:
+            vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
+            vout[0] = var[:].min(), var[:].max()
+        f.variables[varkey] = vout
+    return f
+
+def getdiffpnc(f1, f2, percent = False):
+    outf = getvarpnc(f1, None)
+    f2 = getvarpnc(f2, None)
+    for varkey in outf.variables.keys():
+        if varkey not in coordkeys:
+            outf.variables[varkey] = f1.variables[varkey] - f2.variables[varkey]
+            if percent:
+                outf.variables[varkey] /= f2.variables[varkey] * 100.
+    return outf
+    
+def getvarpnc(f, varkeys):
+    if varkeys is None:
+        varkeys = list(set(f.variables.keys()).difference(coordkeys))
+    outf = PseudoNetCDFFile()
+    outf.createDimension('nv', 2)
+    for propkey in f.ncattrs():
+        setattr(outf, propkey, getattr(f, propkey))
+    for varkey in varkeys:
+        outf.DATAKEY = varkey
+        try:
+            var = eval(varkey, None, f.variables)
+        except:
+            var = f.variables[varkey]
+        for dimk, dimv in zip(var.dimensions, var.shape):
+            if dimk not in outf.dimensions:
+                outf.createDimension(dimk, dimv)
+        for coordk in coordkeys:
+            if coordk in f.dimensions and coordk not in outf.dimensions:
+                outf.createDimension(coordk, len(f.dimensions[coordk]))
+    
+        propd = dict([(k, getattr(var, k)) for k in var.ncattrs()])
+        outf.createVariable(varkey, var.dtype.char, var.dimensions, values = var[:], **propd)
+    for coordkey in coordkeys:
+        coordvar = f.variables[coordkey]
+        propd = dict([(k, getattr(coordvar, k)) for k in coordvar.ncattrs()])
+        outf.createVariable(coordkey, coordvar.dtype.char, coordvar.dimensions, values = coordvar[:], **propd)
+    return outf
+
+
+def pncdump(f, outpath):
+    from netCDF4 import Dataset
+    outf = Dataset(outpath, 'w')
+    for dk, dv in f.dimensions.iteritems():
+        outf.createDimension(dk, len(dv))
+    
+    for pk in f.ncattrs():
+        setattr(outf, pk, getattr(f, pk))
+    
+    for vk in f.variables.keys():
+        vv = f.variables[vk]
+        outv = outf.createVariable(vk, vv.dtype.char, vv.dimensions)
+        outv[:] = vv[:]
+        for pk in vv.ncattrs():
+            setattr(outv, pk, getattr(vv, pk))
+    outf.variables['latitude'] = outf.variables['lat']
+    outf.variables['longitude'] = outf.variables['lon']
+    
+    outf.close()
+
 def run():
+    from optparse import OptionParser
+    class MyParser(OptionParser):
+        def format_epilog(self, formatter):
+            return self.epilog
+
+    parser = MyParser(description = """
+bpch.py provides scriptable plotting and acts as a NetCDF-like library for Binary Punch files. 
+
+For plotting, the a binary punch file must be provided. If 
+
+For use as a library, use "from bpch import bpch" in a python script. For more information, on the bpch reader execute help(bpch) after importing as described above.
+
+""", epilog = '')
+    parser.set_usage("Usage: python bpch.py [-dp] [-s SLICE_DEF] [-r REDUCE_DEF] [-g GROUP] [-v VARIABLE] [bpchpath1 [bpchpath2 [... [bpchpathN]]]")
+    parser.add_option("-d", "--difference", dest="difference",action="store_true",default=False,
+                        help="Plot (bpchpath1 - bpchpath2)")
+
+    parser.add_option("-p", "--percent-difference", dest="percent",action="store_true",default=False,
+                        help="Plot bpchpath1 / bpchpath2 or, if used with -d, (bpchpath1 - bpchpath2) / bpchpath2 * 100.")
+    
+    parser.add_option("-g", "--group", dest = "group", default = None,
+                        help = "bpch variables are organized into groups whose names are defined in diaginfo.dat; for a list simply do not provide the group and you will be prompted.")
+
+    parser.add_option("-v", "--variable", dest = "variable", default = None,
+                        help = "bpch variables have names defined in tracerinfo.dat; for a list simply do not provide the variable and you will be prompted.")
+    
+    parser.add_option("-s", "--slice", dest = "slice", type = "string", action = "append", default = [],
+                        help = "bpch variables have dimensions (time, lev, lat, lon), which can be subset using dim,start,stop,stride")
+    
+    parser.add_option("-r", "--reduce", dest = "reduce", type = "string", action = "append", default = [], help = "bpch variable dimensions can be reduced using dim,function syntax")
+
+    parser.add_option("-o", "--outpath", dest = "outpath", type = "string", action = "append", default = [], help = "bpch variable dimensions can be reduced using dim,function syntax")
+
+    parser.add_option("", "--oldplot", dest = "oldplot", action='store_true', default = False, help = "Use old plot interface")
+
+    (options, args) = parser.parse_args()
+    if options.oldplot:
+        runold()
+        exit()
+    nfiles = len(args)
+    if nfiles == 0:
+        parser.print_help()
+        exit()
+    outfs = []
+    npad = len(args) - len(options.outpath)
+    if len(options.outpath) == 0:
+        options.outpath.append('new_%s')
+    options.outpath.extend(npad * options.outpath[-1:])
+    for fpath, npath in zip(args, options.outpath):
+        bf = bpch(fpath)
+        f = getvarpnc(bf, None)
+        for opts in options.slice:
+            f = slice_dim(f, opts)
+        for opts in options.reduce:
+            f = reduce_dim(f, opts)
+        
+        if '%s' in npath:
+            newpath = npath % os.path.basename(fpath)
+        else:
+            newpath = npath
+            
+        pncdump(f, newpath)
+        if options.difference or options.percent:
+            outfs.append(f)
+        del bf
+        gc.collect()
+            
+    if options.difference or options.percent:
+        f = getdiffpnc(*outfs, percent = options.percent)
+        pncdump(f, 'diff_' + os.path.basename(args[0]) + '_' + os.path.basename(args[1]))
+
+
+def runold():
     from optparse import OptionParser
     class MyParser(OptionParser):
         def format_epilog(self, formatter):
@@ -966,6 +1185,8 @@ Examples:
 
     parser.add_option("", "--frames-per-second", dest="fps", type="float", default=0.5, help = "Used in combination with animate on time, layer, row, or column to regulate the number of frames per second.")
 
+    parser.add_option("", "--oldplot", dest = "oldplot", action='store_true', default = False, help = "Use old plot interface")
+
 
     (options, args) = parser.parse_args()
     use(options.backend)
@@ -1001,7 +1222,7 @@ Examples:
         elif options.percent:
             keyappend = 'pct'
         
-        plotfvars = [('%s-%s-%s' % (os.path.basename(fpath1), os.path.basename(fpath2), keyappend), f, '', var_key, var)]
+        plotfvars = [('%s-%s-%s' % (os.path.basename(fpath1), os.path.basename(fpath2), keyappend), f2, '', var_key, var)]
     else:
         plotfvars = [(fpath,) + getvar(fpath, group_key = options.group, var_key = options.variable) for fpath in args]
     nplots = len(plotfvars)
