@@ -335,6 +335,8 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
         self._parent = parent
         self._special_keys = set(metakeys)
         self._keys = set(keys).union(self._special_keys)
+        if 'BXHGHT-$_BXHEIGHT' not in keys:
+            self._keys.discard('VOL')
         self._example_key = keys[0]
         
     def __missing__(self, key):
@@ -347,7 +349,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             
             dims = ('lat',)
             dtype = 'i'
-            kwds = dict(units = 'degrees north', long_name = key, var_desc = key)
+            kwds = dict(standard_name = "latitude", long_name = "latitude", units = "degrees_north", base_units = "degrees_north", axis = "Y")
             if key == 'lat':
                 data = data[:-1] + diff(data) / 2.
                 kwds['bounds'] = 'lat_bnds'
@@ -357,14 +359,13 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             example = self[self._example_key]
             sj = getattr(example, 'STARTJ', 0)
             data = data[sj:sj + example.shape[2]]
-            kwds = dict(standard_name = "latitude", long_name = "latitude", units = "degrees_north", axis = "Y", bounds = "lat_bnds")
         elif key in ('lon', 'lon_bnds'):
             xres = self._parent.modelres[0]
             i = arange(0, 360 + xres, xres)
             data = i - (180 + xres / 2. * self._parent.center180)
             dims = ('lon',)
             dtype = 'i'
-            kwds = dict(units = 'degrees east', long_name = key, var_desc = key)
+            kwds = dict(standard_name = "longitude", long_name = "longitude", units = "degrees_east", base_units = "degrees_east", axis = "X")
             if key == 'lon':
                 data = data[:-1] + diff(data) / 2.
                 kwds['bounds'] = 'lon_bnds'
@@ -374,7 +375,6 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             example = self[self._example_key]
             si = getattr(example, 'STARTI', 0)
             data = data[si:si + example.shape[3]]
-            kwds = dict(standard_name = "longitude", long_name = "longitude", units = "degrees_east", axis = "X", bounds = "lon_bnds")
         elif key == 'AREA':
            lon = self['lon']
            xres = self._parent.modelres[0]
@@ -385,9 +385,19 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
            latr = pi / 180. * latb
            data = 2. * pi * Re * Re / (nlon) * ( sin( latr[1:] ) - sin( latr[:-1] ) )
            data = data[:, None].repeat(lon.size, 1)
-           kwds = dict(units = 'm**2', grid_mapping = "crs")
+           kwds = dict(units = 'm**2', base_units = 'm**2', grid_mapping = "crs")
            dtype = 'i'
-           dims = ('J', 'I')
+           dims = ('lat', 'lon')
+        elif key == 'VOL':
+           try:
+               bxhght = self['BXHGHT-$_BXHEIGHT']
+               area = self['AREA']
+           except KeyError:
+               raise KeyError('Volume is only available if BXHGHT-$_BXHEIGHT was output')
+           data = area[None,None] * bxhght
+           kwds = dict(units = 'm**3', base_units = 'm**3', grid_mapping = "crs")
+           dtype = 'i'
+           dims = ('time', 'lev', 'lat', 'lon')
         elif key == 'crs':
           dims = ()
           kwds = dict(grid_mapping_name = "latitude_longitude",
@@ -404,25 +414,25 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
                 dims = ('time',)
             
             dtype = 'i'
-            kwds = dict(units = 'hours since 2001-07-22 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
+            kwds = dict(units = 'hours since 1985-01-01 00:00:00 UTC', base_units = 'hours since 1985-01-01 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
         elif key == 'lev':
             tmp_key = self._example_key
             data = arange(len(self._parent.dimensions['lev']), dtype = 'i')
             dims = ('lev',)
             dtype = 'i'
-            kwds = dict(units = 'model layer', standard_name = 'atmosphere_hybrid_sigma_pressure_coordinate', long_name = key, var_desc = key, axis = "Z")
+            kwds = dict(units = 'model layer', base_units = 'model layer', standard_name = 'atmosphere_hybrid_sigma_pressure_coordinate', long_name = key, var_desc = key, axis = "Z")
         elif key == 'tau0':
             tmp_key = self._example_key
             data = self._memmap[tmp_key]['header']['f10']
             dims = ('time',)
             dtype = 'i'
-            kwds = dict(units = 'hours since 0 GMT 1/1/1985', standard_name = key, long_name = key, var_desc = key)
+            kwds = dict(units = 'hours since 1985-01-01 00:00:00 UTC', base_units = 'hours since 1985-01-01 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
         elif key == 'tau1':
             tmp_key = self._example_key
             data = self._memmap[tmp_key]['header']['f11']
             dims = ('time',)
             dtype = 'i'
-            kwds = dict(units = 'hours since 0 GMT 1/1/1985', standard_name = key, long_name = key, var_desc = key)
+            kwds = dict(units = 'hours since 1985-01-01 00:00:00 UTC', base_units = 'hours since 1985-01-01 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
         else:
             dtype = 'f'
             header = self._memmap[key]['header'][0]
@@ -463,7 +473,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
         return PseudoNetCDFVariable(self._parent, key, dtype, dims, values = data, **kwds)
 
 coordkeys = 'time lat lon lev lat_bnds lon_bnds crs'.split()            
-metakeys = ['AREA', 'tau0', 'tau1', 'time_bnds'] + coordkeys
+metakeys = ['VOL', 'AREA', 'tau0', 'tau1', 'time_bnds'] + coordkeys
 
 class bpch(PseudoNetCDFFile):
     """
@@ -538,7 +548,7 @@ class bpch(PseudoNetCDFFile):
             self.createDimension(dk, dv)
         self.createDimension('nv', 2)
         tracerinfo = tracerinfo or os.path.join(os.path.dirname(bpch_path), 'tracerinfo.dat')
-        if not os.path.exists(tracerinfo):
+        if not os.path.exists(tracerinfo) and tracerinfo != ' ':
             tracerinfo = 'tracerinfo.dat'
         if os.path.exists(tracerinfo):
             if os.path.isdir(tracerinfo): tracerinfo = os.path.join(tracerinfo, 'tracerinfo.dat')
@@ -618,8 +628,8 @@ class bpch(PseudoNetCDFFile):
         if len(field_levs) == 1:
             pass
         elif len(field_levs) == 2:
-            self.dimensions['lev'] = max(field_levs)
-            self.dimensions['srf_lev'] = min(field_levs)
+            self.createDimension('lev', max(field_levs))
+            self.createDimension('srf_lev',  min(field_levs))
         else:
             field_levs = list(field_levs)
             field_levs.sort()
@@ -851,7 +861,7 @@ def pad(nplots, option, option_key, default):
             option = option + [default] * (nplots - nopts)
     return option
 
-def reduce_dim(var, eval_str, axis):
+def reduce_dimold(var, eval_str, axis):
     if eval_str == 'animate':
         return var
     if eval_str in dir(np):
@@ -895,11 +905,29 @@ def slice_dim(f, slicedef, fuzzydim = True):
     return f
     
 def reduce_dim(f, reducedef, fuzzydim = True):
-    dimkey, func = reducedef.split(',')
+    commacount = reducedef.count(',')
+    if commacount == 3:
+        dimkey, func, numweightkey, denweightkey = reducedef.split(',')
+        numweight = f.variables[numweightkey]
+        denweight = f.variables[denweightkey]
+    elif commacount == 2:
+        dimkey, func, numweightkey = reducedef.split(',')
+        numweight = f.variables[numweightkey]
+        denweightkey = None
+    elif commacount == 1:
+        dimkey, func = reducedef.split(',')
+        numweightkey = None
+        denweightkey = None
+
     if fuzzydim:
         partial_check = [key for key in f.dimensions if dimkey == key[:len(dimkey)] and key[len(dimkey):].isdigit()]
         for dimk in partial_check:
-            f = reduce_dim(f, '%s,%s' % (dimk, func),)
+            if commacount == 1:
+                f = reduce_dim(f, '%s,%s' % (dimk, func),)
+            elif commacount == 2:
+                f = reduce_dim(f, '%s,%s,%s' % (dimk, func, numweightkey),)
+            elif commacount == 3:
+                f = reduce_dim(f, '%s,%s,%s,%s' % (dimk, func, numweightkey, denweightkey),)
     
     f.createDimension(dimkey, 1)
     for varkey in f.variables.keys():
@@ -908,11 +936,23 @@ def reduce_dim(f, reducedef, fuzzydim = True):
             continue
         
         axis = list(var.dimensions).index(dimkey)
-        if '_bnds' not in varkey:
-            vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
+        
+        if not varkey in metakeys:
+            if numweightkey is None:
+                vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
+            elif denweightkey is None:
+                vout = getattr(np, func)(var * np.array(numweight, ndmin = var.ndim)[(slice(None),)*axis + (slice(0,var.shape[axis]),)], axis = axis)[(slice(None),) * axis + (None,)]
+                vout.units = vout.units.strip() + ' * ' + numweight.units.strip()
+                if hasattr(vout, 'base_units'):
+                    vout.base_units = vout.base_units.strip() + ' * ' + numweight.base_units.strip()
+            else:
+                vout = getattr(np, func)(var * np.array(numweight, ndmin = var.ndim)[(slice(None),)*axis + (slice(0,var.shape[axis]),)], axis = axis)[(slice(None),) * axis + (None,)] / getattr(np, func)(np.array(denweight, ndmin = var.ndim)[(slice(None),)*axis + (slice(0,var.shape[axis]),)], axis = axis)[(slice(None),) * axis + (None,)]
         else:
-            vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
-            vout[0] = var[:].min(), var[:].max()
+            if '_bnds' not in varkey:
+                vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
+            else:
+                vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
+                vout[0] = var[:].min(), var[:].max()
         f.variables[varkey] = vout
     return f
 
@@ -929,6 +969,15 @@ def getdiffpnc(f1, f2, percent = False):
 def getvarpnc(f, varkeys):
     if varkeys is None:
         varkeys = list(set(f.variables.keys()).difference(coordkeys))
+    else:
+        newvarkeys = list(set(varkeys).intersection(f.variables.keys()))
+        newvarkeys.sort()
+        oldvarkeys = list(varkeys)
+        oldvarkeys.sort()
+        if newvarkeys != oldvarkeys:
+            warn('Skipping %s' % ', '.join(set(oldvarkeys).difference(newvarkeys)))
+        varkeys = newvarkeys
+
     outf = PseudoNetCDFFile()
     outf.createDimension('nv', 2)
     for propkey in f.ncattrs():
@@ -955,9 +1004,9 @@ def getvarpnc(f, varkeys):
     return outf
 
 
-def pncdump(f, outpath):
+def pncdump(f, outpath, format):
     from netCDF4 import Dataset
-    outf = Dataset(outpath, 'w')
+    outf = Dataset(outpath, 'w', format = format)
     for dk, dv in f.dimensions.iteritems():
         outf.createDimension(dk, len(dv))
     
@@ -966,8 +1015,12 @@ def pncdump(f, outpath):
     
     for vk in f.variables.keys():
         vv = f.variables[vk]
-        outv = outf.createVariable(vk, vv.dtype.char, vv.dimensions)
-        outv[:] = vv[:]
+        outv = outf.createVariable(vk, vv.dtype.char.replace('l', 'i'), vv.dimensions)
+        try:
+            outv[:] = vv[:]
+        except:
+            # I think the layer is wrong
+            outv[:] = vv[:,:outv.shape[1]]
         for pk in vv.ncattrs():
             setattr(outv, pk, getattr(vv, pk))
     outf.variables['latitude'] = outf.variables['lat']
@@ -1002,12 +1055,19 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
     parser.add_option("-v", "--variable", dest = "variable", default = None,
                         help = "bpch variables have names defined in tracerinfo.dat; for a list simply do not provide the variable and you will be prompted.")
     
-    parser.add_option("-s", "--slice", dest = "slice", type = "string", action = "append", default = [],
-                        help = "bpch variables have dimensions (time, lev, lat, lon), which can be subset using dim,start,stop,stride")
+    parser.add_option("-n", "--netcdf", dest = "netcdf", default = 'NETCDF4_CLASSIC',
+                        help = "NetCDF output version (options=NETCDF3_CLASSIC,NETCDF4_CLASSIC,NETCDF4; default=NETCDF4_CLASSIC).")
     
-    parser.add_option("-r", "--reduce", dest = "reduce", type = "string", action = "append", default = [], help = "bpch variable dimensions can be reduced using dim,function syntax")
+    parser.add_option("-s", "--slice", dest = "slice", type = "string", action = "append", default = [],
+                        help = "bpch variables have dimensions (time, lev, lat, lon), which can be subset using dim,start,stop,stride (e.g., --slice=lev,0,47,5 would sample every fifth level starting at 0)")
+    
+    parser.add_option("-r", "--reduce", dest = "reduce", type = "string", action = "append", default = [], help = "bpch variable dimensions can be reduced using dim,function,weight syntax (e.g., --reduce=lev,mean,weight). Weighting is not fully functional.")
 
     parser.add_option("-o", "--outpath", dest = "outpath", type = "string", action = "append", default = [], help = "bpch variable dimensions can be reduced using dim,function syntax")
+
+    parser.add_option("-C", "--clobber", dest="clobber",action="store_true",default=False,
+                        help="Overwrite pre-existing files (default = False)")
+
 
     parser.add_option("", "--oldplot", dest = "oldplot", action='store_true', default = False, help = "Use old plot interface")
 
@@ -1022,11 +1082,21 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
     outfs = []
     npad = len(args) - len(options.outpath)
     if len(options.outpath) == 0:
-        options.outpath.append('new_%s')
+        options.outpath.append('new_%s.nc')
     options.outpath.extend(npad * options.outpath[-1:])
     for fpath, npath in zip(args, options.outpath):
         bf = bpch(fpath)
-        f = getvarpnc(bf, None)
+        varkeys = None
+        if not options.group is None:
+            if not options.variable is None:
+                varkeys = [options.group.strip() + '_' + options.variable]
+            else:
+                varkeys = [options.group.strip() + '_' + k for k in bf.groups[options.group].variables.keys()]
+        elif not options.variable is None:
+            varkeys = reduce(list.__add__, [[gk + '_' + vk for vk in g.variables.keys() if vk.strip() == options.variable.strip()] for gk, g in bf.groups.iteritems()])
+        if varkeys is not None:
+            varkeys.extend(['AREA', 'VOL'])
+        f = getvarpnc(bf, varkeys)
         for opts in options.slice:
             f = slice_dim(f, opts)
         for opts in options.reduce:
@@ -1036,8 +1106,14 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
             newpath = npath % os.path.basename(fpath)
         else:
             newpath = npath
-            
-        pncdump(f, newpath)
+        
+        if not options.clobber and os.path.exists(newpath):
+            ask = raw_input('Enter Y to overwrite; S to skip; A to abort\n:').lower()
+            if ask == 'a': exit()
+            if ask == 'y': pncdump(f, newpath, format = options.netcdf)
+        else:
+            pncdump(f, newpath, format = options.netcdf)
+        
         if options.difference or options.percent:
             outfs.append(f)
         del bf
@@ -1246,10 +1322,10 @@ Examples:
         try:
             fig_path = ('%s_%s_%s_time%s_layer%s_row%s_col%s.%s' % (os.path.basename(fpath), group_key, var_key, time_str, layer_str, row_str, col_str, options.format)).replace('-$', '').replace('$', '').replace(' ', '').replace('slice(None)', 'all')
             
-            toplot = reduce_dim(var[:], time_str, axis = 0)
-            toplot = reduce_dim(toplot, layer_str, axis = 1)
-            toplot = reduce_dim(toplot, row_str, axis = 2)
-            toplot = reduce_dim(toplot, col_str, axis = 3)
+            toplot = reduce_dimold(var[:], time_str, axis = 0)
+            toplot = reduce_dimold(toplot, layer_str, axis = 1)
+            toplot = reduce_dimold(toplot, row_str, axis = 2)
+            toplot = reduce_dimold(toplot, col_str, axis = 3)
             if toplot.shape[2] != 1 and toplot.shape[3] != 1:
                 maptype = 0
             elif toplot.shape[1] != 1 and toplot.shape[2] != 1:
