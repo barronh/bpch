@@ -397,7 +397,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
            data = area[None,None] * bxhght
            kwds = dict(units = 'm**3', base_units = 'm**3', grid_mapping = "crs")
            dtype = 'i'
-           dims = ('time', 'lev', 'lat', 'lon')
+           dims = ('time', 'layer%d' % data.shape[1], 'lat', 'lon')
         elif key == 'crs':
           dims = ()
           kwds = dict(grid_mapping_name = "latitude_longitude",
@@ -415,10 +415,9 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             
             dtype = 'i'
             kwds = dict(units = 'hours since 1985-01-01 00:00:00 UTC', base_units = 'hours since 1985-01-01 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
-        elif key == 'lev':
-            tmp_key = self._example_key
-            data = arange(len(self._parent.dimensions['lev']), dtype = 'i')
-            dims = ('lev',)
+        elif key[:5] == 'layer':
+            data = arange(len(self._parent.dimensions[key]), dtype = 'i')
+            dims = (key,)
             dtype = 'i'
             kwds = dict(units = 'model layer', base_units = 'model layer', standard_name = 'atmosphere_hybrid_sigma_pressure_coordinate', long_name = key, var_desc = key, axis = "Z")
         elif key == 'tau0':
@@ -444,11 +443,11 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             scale = self._tracer_data[ord]['SCALE']
             carbon = self._tracer_data[ord]['C']
             units = self._tracer_data[ord]['UNIT']
-            kwds = dict(scale = scale, carbon = carbon, units = units, base_units = base_units, standard_name = key, long_name = key, var_desc = key, coordinates = "time lev lat lon", grid_mapping = "crs")
             tmp_data = self._memmap[key]['data']
-            dims = ('time', 'lev', 'lat', 'lon')
-            if len(['lev' in dk_ for dk_ in self._parent.dimensions]) > 1:
-                dims = ('time', 'lev%d' % tmp_data.dtype['f1'].shape[0], 'lat', 'lon')
+            dims = ('time', 'layer', 'lat', 'lon')
+            if len(['layer' in dk_ for dk_ in self._parent.dimensions]) > 1:
+                dims = ('time', 'layer%d' % tmp_data.dtype['f1'].shape[0], 'lat', 'lon')
+            kwds = dict(scale = scale, carbon = carbon, units = units, base_units = base_units, standard_name = key, long_name = key, var_desc = key, coordinates = ' '.join(dims), grid_mapping = "crs")
                 
             assert((tmp_data['f0'] == tmp_data['f2']).all())
             if self._noscale:
@@ -460,7 +459,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             if any([sl != 0, sj != 0, si != 0]):
                 nl, nj, ni = header['f13'][::-1]
                 #import pdb; pdb.set_trace()
-                #tmp_data = zeros((data.shape[0], self._parent.dimensions['lev'], self._parent.dimensions['lat'], self._parent.dimensions['lon']), dtype = data.dtype)
+                #tmp_data = zeros((data.shape[0], self._parent.dimensions['layer'], self._parent.dimensions['lat'], self._parent.dimensions['lon']), dtype = data.dtype)
                 #el, ej, ei = data.shape[1:]
                 #el += sl
                 #ej += sj
@@ -472,7 +471,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
                 kwds['STARTK'] = sl
         return PseudoNetCDFVariable(self._parent, key, dtype, dims, values = data, **kwds)
 
-coordkeys = 'time lat lon lev lat_bnds lon_bnds crs'.split()            
+coordkeys = 'time lat lon layer lat_bnds lon_bnds crs'.split()            
 metakeys = ['VOL', 'AREA', 'tau0', 'tau1', 'time_bnds'] + coordkeys
 
 class bpch(PseudoNetCDFFile):
@@ -544,7 +543,7 @@ class bpch(PseudoNetCDFFile):
         self.toptitle = header[4]
         self.modelname, self.modelres, self.halfpolar, self.center180 = header[7:11]
         dummy, dummy, dummy, self.start_tau0, self.start_tau1, dummy, dim, dummy, dummy = header[13:-1]
-        for dk, dv in zip('lon lat lev'.split(), dim):
+        for dk, dv in zip('lon lat layer'.split(), dim):
             self.createDimension(dk, dv)
         self.createDimension('nv', 2)
         tracerinfo = tracerinfo or os.path.join(os.path.dirname(bpch_path), 'tracerinfo.dat')
@@ -628,13 +627,13 @@ class bpch(PseudoNetCDFFile):
         if len(field_levs) == 1:
             pass
         elif len(field_levs) == 2:
-            self.createDimension('lev', max(field_levs))
+            self.createDimension('layer', max(field_levs))
             self.createDimension('srf_lev',  min(field_levs))
         else:
             field_levs = list(field_levs)
             field_levs.sort()
             for fl in field_levs:
-                self.createDimension('lev%d' % fl, fl)
+                self.createDimension('layer%d' % fl, fl)
 
         assert((float(os.path.getsize(bpch_path)) - _general_header_type.itemsize) % time_type.itemsize == 0.)
         # load all data blocks  
@@ -982,6 +981,7 @@ def getvarpnc(f, varkeys):
     outf.createDimension('nv', 2)
     for propkey in f.ncattrs():
         setattr(outf, propkey, getattr(f, propkey))
+    thiscoordkeys = [k for k in coordkeys]
     for varkey in varkeys:
         outf.DATAKEY = varkey
         try:
@@ -991,6 +991,7 @@ def getvarpnc(f, varkeys):
         for dimk, dimv in zip(var.dimensions, var.shape):
             if dimk not in outf.dimensions:
                 outf.createDimension(dimk, dimv)
+                coordkeys.append(dimk)
         for coordk in coordkeys:
             if coordk in f.dimensions and coordk not in outf.dimensions:
                 outf.createDimension(coordk, len(f.dimensions[coordk]))
@@ -1059,9 +1060,9 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
                         help = "NetCDF output version (options=NETCDF3_CLASSIC,NETCDF4_CLASSIC,NETCDF4; default=NETCDF4_CLASSIC).")
     
     parser.add_option("-s", "--slice", dest = "slice", type = "string", action = "append", default = [],
-                        help = "bpch variables have dimensions (time, lev, lat, lon), which can be subset using dim,start,stop,stride (e.g., --slice=lev,0,47,5 would sample every fifth level starting at 0)")
+                        help = "bpch variables have dimensions (time, layer, lat, lon), which can be subset using dim,start,stop,stride (e.g., --slice=layer,0,47,5 would sample every fifth layer starting at 0)")
     
-    parser.add_option("-r", "--reduce", dest = "reduce", type = "string", action = "append", default = [], help = "bpch variable dimensions can be reduced using dim,function,weight syntax (e.g., --reduce=lev,mean,weight). Weighting is not fully functional.")
+    parser.add_option("-r", "--reduce", dest = "reduce", type = "string", action = "append", default = [], help = "bpch variable dimensions can be reduced using dim,function,weight syntax (e.g., --reduce=layer,mean,weight). Weighting is not fully functional.")
 
     parser.add_option("-o", "--outpath", dest = "outpath", type = "string", action = "append", default = [], help = "bpch variable dimensions can be reduced using dim,function syntax")
 

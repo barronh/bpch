@@ -39,3 +39,5 @@ nosetests.xml
 .pydevproject
 
 .DS_Store
+
+new_ctm.bpch.nc
