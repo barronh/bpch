@@ -624,12 +624,7 @@ class bpch(PseudoNetCDFFile):
         field_levs = set([s_[0] for s_ in field_shapes])
         field_rows = set([s_[1] for s_ in field_shapes])
         field_cols = set([s_[2] for s_ in field_shapes])
-        if len(field_levs) == 1:
-            pass
-        elif len(field_levs) == 2:
-            self.createDimension('layer', max(field_levs))
-            self.createDimension('srf_lev',  min(field_levs))
-        else:
+        if len(field_levs) != 1:
             field_levs = list(field_levs)
             field_levs.sort()
             for fl in field_levs:
