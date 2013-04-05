@@ -416,9 +416,21 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             dtype = 'i'
             kwds = dict(units = 'hours since 1985-01-01 00:00:00 UTC', base_units = 'hours since 1985-01-01 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
         elif key[:5] == 'layer':
-            data = arange(len(self._parent.dimensions[key]), dtype = 'i')
+            if self._parent.vertgrid in ('GEOS-5-REDUCED', 'MERRA-REDUCED'):
+                data = np.array([1005.65, 990.408, 975.122, 959.837, 944.553, 929.268, 913.984, 898.701, 883.418, 868.135, 852.852, 837.57, 819.743, 796.822, 771.354, 745.89, 720.429, 694.969, 663.146, 624.967, 586.793, 548.628, 510.475, 472.335, 434.212, 396.112, 358.038, 313.966, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.514, 85.439, 67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038])
+            elif self._parent.vertgrid in ('GEOS-5-NATIVE', 'MERRA-NATIVE'):
+                data = np.array([1005.706, 983.328, 941.644, 877.974, 797.026, 704.433, 606.413, 514.754, 436.898, 370.793, 314.683, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.515, 85.439, 72.558, 61.496, 52.016, 43.91, 36.993, 31.089, 26.049, 21.761, 18.124, 15.05, 12.46, 10.285, 8.456, 6.918, 5.632, 4.562, 3.677, 2.948, 2.353, 1.868, 1.476, 1.16, 0.907, 0.706, 0.546, 0.42, 0.322, 0.245, 0.185, 0.14, 0.105, 0.078, 0.057, 0.04, 0.026, 0.015])
+            elif self._parent.vertgrid == 'GEOS-4-REDUCED':
+                data = np.array([1005.706, 983.328, 941.644, 877.974, 797.026, 704.433, 606.413, 514.754, 436.898, 370.793, 314.683, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.515, 85.439, 67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038])
+            elif self._parent.vertgrid == 'GEOS-4-NATIVE':
+                data = np.array([1005.706, 983.328, 941.644, 877.974, 797.026, 704.433, 606.413, 514.754, 436.898, 370.793, 314.683, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.515, 85.439, 72.558, 61.496, 52.016, 43.91, 36.993, 31.089, 26.049, 21.761, 18.124, 15.05, 12.46, 10.285, 8.456, 6.918, 5.632, 4.562, 3.677, 2.948, 2.353, 1.868, 1.476, 1.16, 0.907, 0.706, 0.546, 0.42, 0.322, 0.245, 0.185, 0.14, 0.105, 0.078, 0.057, 0.04, 0.026, 0.015])
+            else:
+                warn('Assuming GEOS-5 reduced vertical coordinate')
+                data = np.array([1005.65, 990.408, 975.122, 959.837, 944.553, 929.268, 913.984, 898.701, 883.418, 868.135, 852.852, 837.57, 819.743, 796.822, 771.354, 745.89, 720.429, 694.969, 663.146, 624.967, 586.793, 548.628, 510.475, 472.335, 434.212, 396.112, 358.038, 313.966, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.514, 85.439, 67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038])
+            
+            data = data[:len(self._parent.dimensions[key])]
             dims = (key,)
-            dtype = 'i'
+            dtype = 'f'
             kwds = dict(units = 'model layer', base_units = 'model layer', standard_name = 'atmosphere_hybrid_sigma_pressure_coordinate', long_name = key, var_desc = key, axis = "Z")
         elif key == 'tau0':
             tmp_key = self._example_key
@@ -497,7 +509,7 @@ class bpch(PseudoNetCDFFile):
     
     """
 
-    def __init__(self, bpch_path, tracerinfo = None, diaginfo = None, mode = 'r', timeslice = slice(None), noscale = False):
+    def __init__(self, bpch_path, tracerinfo = None, diaginfo = None, mode = 'r', timeslice = slice(None), noscale = False, vertgrid = 'GEOS-5-REDUCED'):
         """
         bpch_path: path to binary punch file
         tracerinfo: path to ascii file with tracer definitions
@@ -521,6 +533,8 @@ class bpch(PseudoNetCDFFile):
                         - int: return the a part of the file if it was broken into 2GB chunks (0..N-1)
                         - slice: return the times that correspond to that slice (i.e., range(ntimes)[timeslice])
                         - list/tuple/set: return specified times where each time is in the set (0..N-1)
+         noscale: Do not apply scaling factors
+         vertgrid: vertical coordinate system (options: 'GEOS-5-REDUCED', 'GEOS-5-NATIVE', 'MERRA-REDUCED', 'MERRA-NATIVE', 'GEOS-4-REDUCED', 'GEOS-4-NATIVE' -- default 'GEOS-5-REDUCED')
         """
         self._ncattrs = () 
         self._noscale = noscale
@@ -678,6 +692,7 @@ class bpch(PseudoNetCDFFile):
 
         
         # Create variables and dimensions
+        self.vertgrid = vertgrid
         self.variables = _tracer_lookup(parent = self, datamap = datamap, tracerinfo = tracer_data, diaginfo = diag_data, keys = keys, noscale = self._noscale)
         del datamap
         self.createDimension('time', self.variables['tau0'].shape[0])
@@ -1054,6 +1069,9 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
     parser.add_option("-n", "--netcdf", dest = "netcdf", default = 'NETCDF4_CLASSIC',
                         help = "NetCDF output version (options=NETCDF3_CLASSIC,NETCDF4_CLASSIC,NETCDF4; default=NETCDF4_CLASSIC).")
     
+    parser.add_option("", "--vertgrid", dest = "vertgrid", default = 'GEOS-5-REDUCED',
+                        help = "Vertical grid used in bpch file (options=GEOS-5-REDUCED,GEOS-5-NATIVE,MERRA-REDUCED,MERRA-NATIVE,GEOS-4-REDUCED,GEOS-4-NATIVE; default=GEOS-5-REDUCED).")
+    
     parser.add_option("-s", "--slice", dest = "slice", type = "string", action = "append", default = [],
                         help = "bpch variables have dimensions (time, layer, lat, lon), which can be subset using dim,start,stop,stride (e.g., --slice=layer,0,47,5 would sample every fifth layer starting at 0)")
     
@@ -1081,7 +1099,7 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
         options.outpath.append('new_%s.nc')
     options.outpath.extend(npad * options.outpath[-1:])
     for fpath, npath in zip(args, options.outpath):
-        bf = bpch(fpath)
+        bf = bpch(fpath, vertgrid = options.vertgrid)
         varkeys = None
         if not options.group is None:
             if not options.variable is None:
