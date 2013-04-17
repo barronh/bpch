@@ -397,7 +397,9 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
            data = area[None,None] * bxhght
            kwds = dict(units = 'm**3', base_units = 'm**3', grid_mapping = "crs")
            dtype = 'i'
-           dims = ('time', 'layer%d' % data.shape[1], 'lat', 'lon')
+           dims = ('time', 'layer', 'lat', 'lon')
+           if len(['layer' in dk_ for dk_ in self._parent.dimensions]) > 1:
+               dims = ('time', 'layer%d' % data.shape[1], 'lat', 'lon')
         elif key == 'crs':
           dims = ()
           kwds = dict(grid_mapping_name = "latitude_longitude",
@@ -645,11 +647,10 @@ class bpch(PseudoNetCDFFile):
         field_levs = set([s_[0] for s_ in field_shapes])
         field_rows = set([s_[1] for s_ in field_shapes])
         field_cols = set([s_[2] for s_ in field_shapes])
-        if len(field_levs) != 1:
-            field_levs = list(field_levs)
-            field_levs.sort()
-            for fl in field_levs:
-                self.createDimension('layer%d' % fl, fl)
+        field_levs = list(field_levs)
+        field_levs.sort()
+        for fl in field_levs:
+            self.createDimension('layer%d' % fl, fl)
 
         assert((float(os.path.getsize(bpch_path)) - _general_header_type.itemsize) % time_type.itemsize == 0.)
         # load all data blocks  
