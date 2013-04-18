@@ -1061,7 +1061,7 @@ For plotting, the a binary punch file must be provided. If
 For use as a library, use "from bpch import bpch" in a python script. For more information, on the bpch reader execute help(bpch) after importing as described above.
 
 """, epilog = '')
-    parser.set_usage("Usage: python bpch.py [-dp] [-s SLICE_DEF] [-r REDUCE_DEF] [-g GROUP] [-v VARIABLE] [bpchpath1 [bpchpath2 [... [bpchpathN]]]")
+    parser.set_usage("Usage: python bpch.py [-dpC] [-n NETCDF4_OPTION] [-s SLICE_DEF] [-r REDUCE_DEF] [-g GROUP] [-v VARIABLE] [bpchpath1 [bpchpath2 [... [bpchpathN]]]")
     parser.add_option("-d", "--difference", dest="difference",action="store_true",default=False,
                         help="Plot (bpchpath1 - bpchpath2)")
 
