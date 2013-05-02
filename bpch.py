@@ -2,6 +2,7 @@ __all__ = ['bpch']
 
 import os
 import gc
+import re
 
 # part of the default Python distribution
 from collections import defaultdict
@@ -494,6 +495,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
 
 coordkeys = 'time lat lon layer lat_bnds lon_bnds crs'.split()            
 metakeys = ['VOL', 'AREA', 'tau0', 'tau1', 'time_bnds'] + coordkeys
+
 
 class bpch(PseudoNetCDFFile):
     """
@@ -1069,10 +1071,10 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
                         help="Plot bpchpath1 / bpchpath2 or, if used with -d, (bpchpath1 - bpchpath2) / bpchpath2 * 100.")
     
     parser.add_option("-g", "--group", dest = "group", default = None,
-                        help = "bpch variables are organized into groups whose names are defined in diaginfo.dat; for a list simply do not provide the group and you will be prompted.")
+                        help = "bpch variables are organized into groups whose names are defined in diaginfo.dat; Provide a list of group names separated by ','")
 
     parser.add_option("-v", "--variable", dest = "variable", default = None,
-                        help = "bpch variables have names defined in tracerinfo.dat; for a list simply do not provide the variable and you will be prompted.")
+                        help = "Variable names or regular expressions (using match) separated by ','. If a group(s) has been specified, only variables in that (those) group(s) will be selected.")
     
     parser.add_option("-n", "--netcdf", dest = "netcdf", default = 'NETCDF4_CLASSIC',
                         help = "NetCDF output version (options=NETCDF3_CLASSIC,NETCDF4_CLASSIC,NETCDF4; default=NETCDF4_CLASSIC).")
@@ -1110,12 +1112,14 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
         bf = bpch(fpath, vertgrid = options.vertgrid)
         varkeys = None
         if not options.group is None:
-            if not options.variable is None:
-                varkeys = [options.group.strip() + '_' + options.variable]
-            else:
-                varkeys = [options.group.strip() + '_' + k for k in bf.groups[options.group].variables.keys()]
-        elif not options.variable is None:
-            varkeys = reduce(list.__add__, [[gk + '_' + vk for vk in g.variables.keys() if vk.strip() == options.variable.strip()] for gk, g in bf.groups.iteritems()])
+            varkeys = reduce(list.__add__, [[(grp.strip(), k) for k in bf.groups[grp].variables.keys() if k not in metakeys] for grp in options.group.split(',')])
+        else:
+            varkeys = reduce(list.__add__, [[(gk,k) for k in g.variables.keys() if k not in metakeys] for gk, g in bf.groups.iteritems()])
+        if not options.variable is None:
+            varre = [re.compile(var) for var in options.variable.split(',')]
+            varkeys = [gk.strip() + '_' + k for gk, k in varkeys if any([var.match(k) for var in varre])]
+        else:
+            varkeys = [gk.strip() + '_' + k for gk, k in varkeys]
         if varkeys is not None:
             varkeys.extend(['AREA', 'VOL'])
         f = getvarpnc(bf, varkeys)
