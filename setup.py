@@ -10,8 +10,8 @@ setup(name = 'bpch',
       maintainer = 'Barron Henderson',
       maintainer_email = 'barronh@ufl.edu',
       py_modules = ['bpch'],
-      install_requires = ['numpy >=1.5', 'matplotlib >=1.0'],
-      requires = ['numpy >=1.5', 'matplotlib >=1.0'],
+      install_requires = ['numpy (>=1.5)', 'matplotlib (>=1.0)'],
+      requires = ['numpy (>=1.5)', 'matplotlib (>=1.0)'],
       url = 'https://github.com/barronh/bpch',
       download_url = 'https://github.com/barronh/bpch/archive/1.0rc.zip'
       )
