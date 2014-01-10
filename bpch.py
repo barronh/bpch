@@ -1249,8 +1249,6 @@ def pncdump(f, outpath, format):
     from netCDF4 import Dataset
     outf = Dataset(outpath, 'w', format = format)
     for dk, dv in f.dimensions.iteritems():
-        if dk == 'time':
-            import pdb; pdb.set_trace()
         if dv.isunlimited():
             outf.createDimension(dk, None)
         else:
