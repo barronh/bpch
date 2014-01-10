@@ -1,4 +1,5 @@
 __all__ = ['bpch']
+from matplotlib import use
 
 import os
 import gc
@@ -7,168 +8,176 @@ import re
 # part of the default Python distribution
 from collections import defaultdict
 from warnings import warn
+from StringIO import StringIO
 
 # numpy is a very common installed library
 import numpy as np
 from numpy import ndarray, fromfile, memmap, dtype, arange, zeros, ceil, diff, concatenate, append, pi, sin
 
-from matplotlib import use
-# PseudoNetCDF is my own home grown
-# https://dawes.sph.unc.edu/trac/PseudoNetCDF
-#from PseudoNetCDF import PseudoNetCDFVariable, PseudoNetCDFFile
-class PseudoNetCDFDimension(object):
-    """
-    Dimension object responds like that of netcdf4-python
-    """
-    def __init__(self, group, name, size):
-        self._len = int(size)
-    def isunlimitied(self):
-        return False
-    def __len__(self):
-        return self._len
+try:
+    from PseudoNetCDF import PseudoNetCDFDimension, PseudoNetCDFVariable, PseudoNetCDFFile
+except:
+    warn('Using static PseudoNetCDF')
+    # PseudoNetCDF is my own home grown
+    # https://dawes.sph.unc.edu/trac/PseudoNetCDF
+    #from PseudoNetCDF import PseudoNetCDFVariable, PseudoNetCDFFile
+    class PseudoNetCDFDimension(object):
+        """
+        Dimension object responds like that of netcdf4-python
+        """
+        def __init__(self, group, name, size):
+            self._len = int(size)
+            self._unlimited = False
+        def isunlimited(self):
+            return self._unlimited
+        def __len__(self):
+            return self._len
+        def setunlimited(self, unlimited):
+            self._unlimited = unlimited
 
-class PseudoNetCDFFile(object):
-    """
-    PseudoNetCDFFile provides an interface and standard set of
-    methods that a file should present to act like a netCDF file
-    using the Scientific.IO.NetCDF.NetCDFFile interface.
-    """
-    def __new__(cls, *args, **kwds):
-        new = object.__new__(cls, *args, **kwds)
-        new.variables={}
-        new.dimensions={}
-        new._ncattrs = ()
-        return new
+    class PseudoNetCDFFile(object):
+        """
+        PseudoNetCDFFile provides an interface and standard set of
+        methods that a file should present to act like a netCDF file
+        using the Scientific.IO.NetCDF.NetCDFFile interface.
+        """
+        def __new__(cls, *args, **kwds):
+            new = object.__new__(cls, *args, **kwds)
+            new.variables={}
+            new.dimensions={}
+            new._ncattrs = ()
+            return new
     
-    def __init__(self, *args, **properties):
-        for k, v in properties.iteritems():
-            setattr(self, k, v)
+        def __init__(self, *args, **properties):
+            for k, v in properties.iteritems():
+                setattr(self, k, v)
 
-    def __setattr__(self, k, v):
-        if not (k[:1] == '_' or k in ('dimensions', 'variables', 'groups')):
-            self._ncattrs += (k,)
-        object.__setattr__(self, k, v)
-    def createDimension(self,name,length):
-        """
-        name - string name for dimension
-        length - maximum length of dimension
-        """
-        self.dimensions[name]=PseudoNetCDFDimension(self, name, length)
+        def __setattr__(self, k, v):
+            if not (k[:1] == '_' or k in ('dimensions', 'variables', 'groups')):
+                self._ncattrs += (k,)
+            object.__setattr__(self, k, v)
+        def createDimension(self,name,length):
+            """
+            name - string name for dimension
+            length - maximum length of dimension
+            """
+            dim = self.dimensions[name] = PseudoNetCDFDimension(self, name, length)
+            return dim
 
-    def createVariable(self, name, type, dimensions, **properties):
-        """
-        name - string
-        type - numpy dtype code (e.g., 'f', 'i', 'd')
-        dimensions - tuple of dimension keys that can be
-                     found in objects' dimensions dictionary
-        """
-        var = self.variables[name] = PseudoNetCDFVariable(self,name,type,dimensions, **properties)
-        return var
+        def createVariable(self, name, type, dimensions, **properties):
+            """
+            name - string
+            type - numpy dtype code (e.g., 'f', 'i', 'd')
+            dimensions - tuple of dimension keys that can be
+                         found in objects' dimensions dictionary
+            """
+            var = self.variables[name] = PseudoNetCDFVariable(self,name,type,dimensions, **properties)
+            return var
 
-    def close(self):
-        """
-        Does nothing.  Implemented for continuity with Scientific.IO.NetCDF
-        """
-        pass
+        def close(self):
+            """
+            Does nothing.  Implemented for continuity with Scientific.IO.NetCDF
+            """
+            pass
 
-    def ncattrs(self):
-        return self._ncattrs
+        def ncattrs(self):
+            return self._ncattrs
 
-    sync=close
-    flush=close
+        sync=close
+        flush=close
 
-class PseudoNetCDFVariable(ndarray):
-    """
-    PseudoNetCDFVariable presents the Scientific.IO.NetCDF.NetCDFVariable interface,
-    but unlike that type, provides a contructor for variables that could be used
-    without adding it to the parent file
-    """
-    def __setattr__(self, k, v):
+    class PseudoNetCDFVariable(ndarray):
         """
-        Set attributes (aka properties) and identify user-defined attributes.
+        PseudoNetCDFVariable presents the Scientific.IO.NetCDF.NetCDFVariable interface,
+        but unlike that type, provides a contructor for variables that could be used
+        without adding it to the parent file
         """
-        if not hasattr(self, k) and k[:1] != '_':
-            self._ncattrs += (k,)
-        ndarray.__setattr__(self, k, v)
-    def ncattrs(self):
-        """
-        Returns a tuple of attributes that have been user defined
-        """
+        def __setattr__(self, k, v):
+            """
+            Set attributes (aka properties) and identify user-defined attributes.
+            """
+            if not hasattr(self, k) and k[:1] != '_':
+                self._ncattrs += (k,)
+            ndarray.__setattr__(self, k, v)
+        def ncattrs(self):
+            """
+            Returns a tuple of attributes that have been user defined
+            """
         
-        return self._ncattrs
-    def __new__(subtype,parent,name,typecode,dimensions,**kwds):
-        """
-        Creates a variable using the dimensions as defined in
-        the parent object
+            return self._ncattrs
+        def __new__(subtype,parent,name,typecode,dimensions,**kwds):
+            """
+            Creates a variable using the dimensions as defined in
+            the parent object
 
-        parent: an object with a dimensions variable
-        name: name for variable
-        typecode: numpy style typecode
-        dimensions: a typle of dimension names to be used from
-                    parrent
-        kwds: Dictionary of keywords to be added as properties
-              to the variable.  **The keyword 'values' is a special
-              case that will be used as the starting values of
-              the array
+            parent: an object with a dimensions variable
+            name: name for variable
+            typecode: numpy style typecode
+            dimensions: a typle of dimension names to be used from
+                        parrent
+            kwds: Dictionary of keywords to be added as properties
+                  to the variable.  **The keyword 'values' is a special
+                  case that will be used as the starting values of
+                  the array
 
-        """
-        if 'values' in kwds.keys():
-            result=kwds.pop('values')
-        else:
-            shape=[]
-            for d in dimensions:
-                dim = parent.dimensions[d]
+            """
+            if 'values' in kwds.keys():
+                result=kwds.pop('values')
+            else:
+                shape=[]
+                for d in dimensions:
+                    dim = parent.dimensions[d]
 
-                # Adding support for netCDF3 dimension objects
-                if not isinstance(dim, int):
-                    dim = len(dim)
-                shape.append(dim)
+                    # Adding support for netCDF3 dimension objects
+                    if not isinstance(dim, int):
+                        dim = len(dim)
+                    shape.append(dim)
 
-            result=zeros(shape,typecode)
+                result=zeros(shape,typecode)
 
-        result=result[...].view(subtype)
+            result=result[...].view(subtype)
 
-        if hasattr(result, '__dict__'):
-            result.__dict__['typecode'] = lambda: typecode
-            result.__dict__['dimensions'] = tuple(dimensions)
-        else:
-            result.__dict__ = {
-                'typecode': lambda: typecode,
-                'dimensions': tuple(dimensions)
-            }
+            if hasattr(result, '__dict__'):
+                result.__dict__['typecode'] = lambda: typecode
+                result.__dict__['dimensions'] = tuple(dimensions)
+            else:
+                result.__dict__ = {
+                    'typecode': lambda: typecode,
+                    'dimensions': tuple(dimensions)
+                }
 
-#        object.__setattr__(result, '_ncattrs', ())
+    #        object.__setattr__(result, '_ncattrs', ())
 
-        for k,v in kwds.iteritems():
-            setattr(result,k,v)
-        return result
+            for k,v in kwds.iteritems():
+                setattr(result,k,v)
+            return result
 
-    def __array_finalize__(self, obj):
-        """
-        finalization involves propagating features through opertations.
-        """
-        assert(hasattr(self, '_ncattrs') == False)
-        self._ncattrs = ()
-        if obj is None: return
-        if hasattr(obj, '_ncattrs'):
-            for k in obj._ncattrs:
-                setattr(self, k, getattr(obj, k))
-        if not hasattr(self, 'dimensions'):
-            if hasattr(obj, 'dimensions'):
-                setattr(self, 'dimensions', obj.dimensions)
-                self._ncattrs = self._ncattrs[:-1]
+        def __array_finalize__(self, obj):
+            """
+            finalization involves propagating features through opertations.
+            """
+            assert(hasattr(self, '_ncattrs') == False)
+            self._ncattrs = ()
+            if obj is None: return
+            if hasattr(obj, '_ncattrs'):
+                for k in obj._ncattrs:
+                    setattr(self, k, getattr(obj, k))
+            if not hasattr(self, 'dimensions'):
+                if hasattr(obj, 'dimensions'):
+                    setattr(self, 'dimensions', obj.dimensions)
+                    self._ncattrs = self._ncattrs[:-1]
     
-    def getValue(self):
-        """
-        Return scalar value
-        """
-        return self.item()
+        def getValue(self):
+            """
+            Return scalar value
+            """
+            return self.item()
 
-    def assignValue(self,value):
-        """
-        assign value to scalar variable
-        """
-        self.itemset(value)
+        def assignValue(self,value):
+            """
+            assign value to scalar variable
+            """
+            self.itemset(value)
 
 
 # These variables define the binary format of the header blocks
@@ -307,13 +316,21 @@ class _diag_group(PseudoNetCDFFile):
             except (KeyError, ValueError):
                 return parent.variables[key]
         self._parent = parent
-        self.variables = defaultpseudonetcdfvariable(list(groupvariables) + metakeys, getvar)
+        if 'BXHGHT-$_BXHEIGHT' not in groupvariables:
+            mymetakeys = [k for k in metakeys if k != 'VOL']
+        else:
+            mymetakeys = metakeys
+        self.variables = defaultpseudonetcdfvariable(list(groupvariables) + mymetakeys, getvar)
+        
     
     def __getattr__(self, key):
         try:
             return object.__getattr__(self, key)
-        except AttributeError:
-            return getattr(self._parent, key)
+        except AttributeError, e:
+            if key != 'groups':
+                return getattr(self._parent, key)
+            else:
+                raise e
     
 # This class is designed to operate like a dictionary, but
 # dynamically create variables to return to the user
@@ -341,35 +358,35 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
         self._example_key = keys[0]
         
     def __missing__(self, key):
-        if key in ('lat', 'lat_bnds'):
+        if key in ('latitude', 'latitude_bounds'):
             yres = self._parent.modelres[1]
             if self._parent.halfpolar == 1:
                 data = concatenate([[-90.], arange(-90. + yres / 2., 90., yres), [90.]])
             else:
                 data = arange(-90, 90 + yres, yres)
             
-            dims = ('lat',)
-            dtype = 'i'
+            dims = ('latitude',)
+            dtype = 'f'
             kwds = dict(standard_name = "latitude", long_name = "latitude", units = "degrees_north", base_units = "degrees_north", axis = "Y")
-            if key == 'lat':
+            if key == 'latitude':
                 data = data[:-1] + diff(data) / 2.
-                kwds['bounds'] = 'lat_bnds'
+                kwds['bounds'] = 'latitude_bounds'
             else:
                 dims += ('nv',)
                 data = data.repeat(2,0)[1:-1].reshape(-1, 2)
             example = self[self._example_key]
             sj = getattr(example, 'STARTJ', 0)
             data = data[sj:sj + example.shape[2]]
-        elif key in ('lon', 'lon_bnds'):
+        elif key in ('longitude', 'longitude_bounds'):
             xres = self._parent.modelres[0]
             i = arange(0, 360 + xres, xres)
             data = i - (180 + xres / 2. * self._parent.center180)
-            dims = ('lon',)
-            dtype = 'i'
+            dims = ('longitude',)
+            dtype = 'f'
             kwds = dict(standard_name = "longitude", long_name = "longitude", units = "degrees_east", base_units = "degrees_east", axis = "X")
-            if key == 'lon':
+            if key == 'longitude':
                 data = data[:-1] + diff(data) / 2.
-                kwds['bounds'] = 'lon_bnds'
+                kwds['bounds'] = 'longitude_bounds'
             else:
                 dims += ('nv',)
                 data = data.repeat(2,0)[1:-1].reshape(-1, 2)
@@ -377,18 +394,18 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             si = getattr(example, 'STARTI', 0)
             data = data[si:si + example.shape[3]]
         elif key == 'AREA':
-           lon = self['lon']
+           lon = self['longitude']
            xres = self._parent.modelres[0]
            nlon = 360. / xres
-           latb = self['lat_bnds']
+           latb = self['latitude_bounds']
            Re = self['crs'].semi_major_axis
            latb = append(latb[:, 0], latb[-1, 1])
            latr = pi / 180. * latb
            data = 2. * pi * Re * Re / (nlon) * ( sin( latr[1:] ) - sin( latr[:-1] ) )
            data = data[:, None].repeat(lon.size, 1)
            kwds = dict(units = 'm**2', base_units = 'm**2', grid_mapping = "crs")
-           dtype = 'i'
-           dims = ('lat', 'lon')
+           dtype = 'f'
+           dims = ('latitude', 'longitude')
         elif key == 'VOL':
            try:
                bxhght = self['BXHGHT-$_BXHEIGHT']
@@ -397,10 +414,10 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
                raise KeyError('Volume is only available if BXHGHT-$_BXHEIGHT was output')
            data = area[None,None] * bxhght
            kwds = dict(units = 'm**3', base_units = 'm**3', grid_mapping = "crs")
-           dtype = 'i'
-           dims = ('time', 'layer', 'lat', 'lon')
+           dtype = 'f'
+           dims = ('time', 'layer', 'latitude', 'longitude')
            if len(['layer' in dk_ for dk_ in self._parent.dimensions]) > 1:
-               dims = ('time', 'layer%d' % data.shape[1], 'lat', 'lon')
+               dims = ('time', 'layer%d' % data.shape[1], 'latitude', 'longitude')
         elif key == 'crs':
           dims = ()
           kwds = dict(grid_mapping_name = "latitude_longitude",
@@ -408,7 +425,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
                       inverse_flattening = 0)
           dtype = 'i'
           data = zeros(1, dtype = dtype)
-        elif key in ('time', 'time_bnds'):
+        elif key in ('time', 'time_bounds'):
             tmp_key = self._example_key
             data = np.array([self['tau0'], self['tau1']]).T
             dims = ('time', 'nv')
@@ -416,27 +433,29 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
                 data = data.mean(1)
                 dims = ('time',)
             
-            dtype = 'i'
+            dtype = 'd'
             kwds = dict(units = 'hours since 1985-01-01 00:00:00 UTC', base_units = 'hours since 1985-01-01 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
+            if key == 'time':
+                kwds['bounds'] = 'time_bounds'
         elif key[:5] == 'layer':
             if self._parent.vertgrid in ('GEOS-5-REDUCED', 'MERRA-REDUCED'):
-                if key[5:] == '48':
-                    data = np.array([1013.25, 998.051, 982.765, 967.48, 952.195, 936.911, 921.626, 906.342, 891.059, 875.776, 860.493, 845.211, 829.929, 809.556, 784.088, 758.621, 733.16, 707.699, 682.239, 644.054, 605.88, 567.706, 529.55, 491.401, 453.269, 415.155, 377.07, 339.005, 288.927, 245.246, 208.244, 176.93, 150.393, 127.837, 108.663, 92.366, 78.512, 56.388, 40.175, 28.368, 19.792, 9.293, 4.077, 1.651, 0.617, 0.211, 0.066, 0.01])
+                if key[5:] in ('48', '_edges'):
+                    data = np.array([1013.25, 998.051, 982.765, 967.48, 952.195, 936.911, 921.626, 906.342, 891.059, 875.776, 860.493, 845.211, 829.929, 809.556, 784.088, 758.621, 733.16, 707.699, 682.239, 644.054, 605.88, 567.706, 529.55, 491.401, 453.269, 415.155, 377.07, 339.005, 288.927, 245.246, 208.244, 176.93, 150.393, 127.837, 108.663, 92.366, 78.512, 56.388, 40.175, 28.368, 19.792, 9.293, 4.077, 1.651, 0.617, 0.211, 0.066, 0.01], dtype = 'f')
                 else:
-                    data = np.array([1005.65, 990.408, 975.122, 959.837, 944.553, 929.268, 913.984, 898.701, 883.418, 868.135, 852.852, 837.57, 819.743, 796.822, 771.354, 745.89, 720.429, 694.969, 663.146, 624.967, 586.793, 548.628, 510.475, 472.335, 434.212, 396.112, 358.038, 313.966, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.514, 85.439, 67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038])
+                    data = np.array([1005.65, 990.408, 975.122, 959.837, 944.553, 929.268, 913.984, 898.701, 883.418, 868.135, 852.852, 837.57, 819.743, 796.822, 771.354, 745.89, 720.429, 694.969, 663.146, 624.967, 586.793, 548.628, 510.475, 472.335, 434.212, 396.112, 358.038, 313.966, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.514, 85.439, 67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038], dtype = 'f')
                     
             elif self._parent.vertgrid in ('GEOS-5-NATIVE', 'MERRA-NATIVE'):
-                if key[5:] == '73':
-                    data = np.array([1013.25, 998.051, 982.765, 967.48, 952.195, 936.911, 921.626, 906.342, 891.059, 875.776, 860.493, 845.211, 829.929, 809.556, 784.088, 758.621, 733.16, 707.699, 682.239, 644.054, 605.88, 567.706, 529.55, 491.401, 453.269, 415.155, 377.07, 339.005, 288.927, 245.246, 208.244, 176.93, 150.393, 127.837, 108.663, 92.366, 78.512, 66.603, 56.388, 47.644, 40.175, 33.81, 28.368, 23.73, 19.792, 16.457, 13.643, 11.277, 9.293, 7.62, 6.217, 5.047, 4.077, 3.276, 2.62, 2.085, 1.651, 1.301, 1.019, 0.795, 0.617, 0.476, 0.365, 0.279, 0.211, 0.159, 0.12, 0.089, 0.066, 0.048, 0.033, 0.02, 0.01])
+                if key[5:] in ('73', '_edges'):
+                    data = np.array([1013.25, 998.051, 982.765, 967.48, 952.195, 936.911, 921.626, 906.342, 891.059, 875.776, 860.493, 845.211, 829.929, 809.556, 784.088, 758.621, 733.16, 707.699, 682.239, 644.054, 605.88, 567.706, 529.55, 491.401, 453.269, 415.155, 377.07, 339.005, 288.927, 245.246, 208.244, 176.93, 150.393, 127.837, 108.663, 92.366, 78.512, 66.603, 56.388, 47.644, 40.175, 33.81, 28.368, 23.73, 19.792, 16.457, 13.643, 11.277, 9.293, 7.62, 6.217, 5.047, 4.077, 3.276, 2.62, 2.085, 1.651, 1.301, 1.019, 0.795, 0.617, 0.476, 0.365, 0.279, 0.211, 0.159, 0.12, 0.089, 0.066, 0.048, 0.033, 0.02, 0.01], dtype = 'f')
                 else:
-                    data = np.array([1005.65, 990.408, 975.122, 959.837, 944.553, 929.268, 913.984, 898.701, 883.418, 868.135, 852.852, 837.57, 819.743, 796.822, 771.354, 745.89, 720.429, 694.969, 663.146, 624.967, 586.793, 548.628, 510.475, 472.335, 434.212, 396.112, 358.038, 313.966, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.514, 85.439, 72.558, 61.496, 52.016, 43.91, 36.993, 31.089, 26.049, 21.761, 18.124, 15.05, 12.46, 10.285, 8.456, 6.918, 5.632, 4.562, 3.677, 2.948, 2.353, 1.868, 1.476, 1.16, 0.907, 0.706, 0.546, 0.42, 0.322, 0.245, 0.185, 0.14, 0.105, 0.078, 0.057, 0.04, 0.026, 0.015])
+                    data = np.array([1005.65, 990.408, 975.122, 959.837, 944.553, 929.268, 913.984, 898.701, 883.418, 868.135, 852.852, 837.57, 819.743, 796.822, 771.354, 745.89, 720.429, 694.969, 663.146, 624.967, 586.793, 548.628, 510.475, 472.335, 434.212, 396.112, 358.038, 313.966, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.514, 85.439, 72.558, 61.496, 52.016, 43.91, 36.993, 31.089, 26.049, 21.761, 18.124, 15.05, 12.46, 10.285, 8.456, 6.918, 5.632, 4.562, 3.677, 2.948, 2.353, 1.868, 1.476, 1.16, 0.907, 0.706, 0.546, 0.42, 0.322, 0.245, 0.185, 0.14, 0.105, 0.078, 0.057, 0.04, 0.026, 0.015], dtype = 'f')
             elif self._parent.vertgrid == 'GEOS-4-REDUCED':
-                data = np.array([1005.706, 983.328, 941.644, 877.974, 797.026, 704.433, 606.413, 514.754, 436.898, 370.793, 314.683, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.515, 85.439, 67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038])
+                data = np.array([1005.706, 983.328, 941.644, 877.974, 797.026, 704.433, 606.413, 514.754, 436.898, 370.793, 314.683, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.515, 85.439, 67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038], dtype = 'f')
             elif self._parent.vertgrid == 'GEOS-4-NATIVE':
-                data = np.array([1005.706, 983.328, 941.644, 877.974, 797.026, 704.433, 606.413, 514.754, 436.898, 370.793, 314.683, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.515, 85.439, 72.558, 61.496, 52.016, 43.91, 36.993, 31.089, 26.049, 21.761, 18.124, 15.05, 12.46, 10.285, 8.456, 6.918, 5.632, 4.562, 3.677, 2.948, 2.353, 1.868, 1.476, 1.16, 0.907, 0.706, 0.546, 0.42, 0.322, 0.245, 0.185, 0.14, 0.105, 0.078, 0.057, 0.04, 0.026, 0.015])
+                data = np.array([1005.706, 983.328, 941.644, 877.974, 797.026, 704.433, 606.413, 514.754, 436.898, 370.793, 314.683, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.515, 85.439, 72.558, 61.496, 52.016, 43.91, 36.993, 31.089, 26.049, 21.761, 18.124, 15.05, 12.46, 10.285, 8.456, 6.918, 5.632, 4.562, 3.677, 2.948, 2.353, 1.868, 1.476, 1.16, 0.907, 0.706, 0.546, 0.42, 0.322, 0.245, 0.185, 0.14, 0.105, 0.078, 0.057, 0.04, 0.026, 0.015], dtype = 'f')
             else:
                 warn('Assuming GEOS-5 reduced vertical coordinate')
-                data = np.array([1005.65, 990.408, 975.122, 959.837, 944.553, 929.268, 913.984, 898.701, 883.418, 868.135, 852.852, 837.57, 819.743, 796.822, 771.354, 745.89, 720.429, 694.969, 663.146, 624.967, 586.793, 548.628, 510.475, 472.335, 434.212, 396.112, 358.038, 313.966, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.514, 85.439,67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038])
+                data = np.array([1005.65, 990.408, 975.122, 959.837, 944.553, 929.268, 913.984, 898.701, 883.418, 868.135, 852.852, 837.57, 819.743, 796.822, 771.354, 745.89, 720.429, 694.969, 663.146, 624.967, 586.793, 548.628, 510.475, 472.335, 434.212, 396.112, 358.038, 313.966, 267.087, 226.745, 192.587, 163.661, 139.115, 118.25, 100.514, 85.439,67.45, 48.282, 34.272, 24.08, 14.542, 6.685, 2.864, 1.134, 0.414, 0.139, 0.038], dtype = 'f')
             
             data = data[:len(self._parent.dimensions[key])]
             dims = (key,)
@@ -446,13 +465,13 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             tmp_key = self._example_key
             data = self._memmap[tmp_key]['header']['f10']
             dims = ('time',)
-            dtype = 'i'
+            dtype = 'd'
             kwds = dict(units = 'hours since 1985-01-01 00:00:00 UTC', base_units = 'hours since 1985-01-01 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
         elif key == 'tau1':
             tmp_key = self._example_key
             data = self._memmap[tmp_key]['header']['f11']
             dims = ('time',)
-            dtype = 'i'
+            dtype = 'd'
             kwds = dict(units = 'hours since 1985-01-01 00:00:00 UTC', base_units = 'hours since 1985-01-01 00:00:00 UTC', standard_name = key, long_name = key, var_desc = key)
         else:
             dtype = 'f'
@@ -463,13 +482,14 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             ord = header['f8'] + offset
             base_units = header['f9']
             scale = self._tracer_data[ord]['SCALE']
+            molwt = self._tracer_data[ord]['MOLWT']
             carbon = self._tracer_data[ord]['C']
             units = self._tracer_data[ord]['UNIT']
             tmp_data = self._memmap[key]['data']
-            dims = ('time', 'layer', 'lat', 'lon')
+            dims = ('time', 'layer', 'latitude', 'longitude')
             if len(['layer' in dk_ for dk_ in self._parent.dimensions]) > 1:
-                dims = ('time', 'layer%d' % tmp_data.dtype['f1'].shape[0], 'lat', 'lon')
-            kwds = dict(scale = scale, carbon = carbon, units = units, base_units = base_units, standard_name = key, long_name = key, var_desc = key, coordinates = ' '.join(dims), grid_mapping = "crs")
+                dims = ('time', 'layer%d' % tmp_data.dtype['f1'].shape[0], 'latitude', 'longitude')
+            kwds = dict(scale = scale, kgpermole = molwt, carbon = carbon, units = units, base_units = base_units, standard_name = key, long_name = key, var_desc = key, coordinates = ' '.join(dims), grid_mapping = "crs")
                 
             assert((tmp_data['f0'] == tmp_data['f2']).all())
             if self._noscale:
@@ -481,7 +501,7 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
             if any([sl != 0, sj != 0, si != 0]):
                 nl, nj, ni = header['f13'][::-1]
                 #import pdb; pdb.set_trace()
-                #tmp_data = zeros((data.shape[0], self._parent.dimensions['layer'], self._parent.dimensions['lat'], self._parent.dimensions['lon']), dtype = data.dtype)
+                #tmp_data = zeros((data.shape[0], self._parent.dimensions['layer'], self._parent.dimensions['latitude'], self._parent.dimensions['longitude']), dtype = data.dtype)
                 #el, ej, ei = data.shape[1:]
                 #el += sl
                 #ej += sj
@@ -493,8 +513,8 @@ class _tracer_lookup(defaultpseudonetcdfvariable):
                 kwds['STARTK'] = sl
         return PseudoNetCDFVariable(self._parent, key, dtype, dims, values = data, **kwds)
 
-coordkeys = 'time lat lon layer lat_bnds lon_bnds crs'.split()            
-metakeys = ['VOL', 'AREA', 'tau0', 'tau1', 'time_bnds'] + coordkeys
+coordkeys = 'time latitude longitude layer latitude_bounds longitude_bounds crs'.split()            
+metakeys = ['VOL', 'AREA', 'tau0', 'tau1', 'time_bounds'] + coordkeys
 
 
 class bpch(PseudoNetCDFFile):
@@ -502,7 +522,7 @@ class bpch(PseudoNetCDFFile):
     NetCDF-like class to interface with GEOS-Chem binary punch files
     
     f = bpch(path_to_binary_file)
-    dim = f.dimensions[dkey] # e.g., dkey = 'lon'
+    dim = f.dimensions[dkey] # e.g., dkey = 'longitude'
     
     # There are two ways to get variables.  Directly from
     # the file using the long name
@@ -568,15 +588,19 @@ class bpch(PseudoNetCDFFile):
         self.toptitle = header[4]
         self.modelname, self.modelres, self.halfpolar, self.center180 = header[7:11]
         dummy, dummy, dummy, self.start_tau0, self.start_tau1, dummy, dim, dummy, dummy = header[13:-1]
-        for dk, dv in zip('lon lat layer'.split(), dim):
+        for dk, dv in zip('longitude latitude layer'.split(), dim):
             self.createDimension(dk, dv)
         self.createDimension('nv', 2)
         tracerinfo = tracerinfo or os.path.join(os.path.dirname(bpch_path), 'tracerinfo.dat')
-        if not os.path.exists(tracerinfo) and tracerinfo != ' ':
-            tracerinfo = 'tracerinfo.dat'
-        if os.path.exists(tracerinfo):
-            if os.path.isdir(tracerinfo): tracerinfo = os.path.join(tracerinfo, 'tracerinfo.dat')
-            tracer_data = dict([(int(l[52:61].strip()), dict(NAME = l[:8].strip(), FULLNAME = l[9:39].strip(), MOLWT = float(l[39:49]), C = int(l[49:52]), TRACER = int(l[52:61]), SCALE = float(l[61:71]), UNIT = l[72:].strip())) for l in file(tracerinfo).readlines() if l[0] not in ('#', ' ')])
+        if isinstance(tracerinfo, (str, unicode)):
+            if not os.path.exists(tracerinfo) and tracerinfo != ' ':
+                tracerinfo = 'tracerinfo.dat'
+            if os.path.exists(tracerinfo):
+                if os.path.isdir(tracerinfo): tracerinfo = os.path.join(tracerinfo, 'tracerinfo.dat')
+        
+            tracerinfo = file(tracerinfo)
+        if isinstance(tracerinfo, (file, StringIO)):
+            tracer_data = dict([(int(l[52:61].strip()), dict(NAME = l[:8].strip(), FULLNAME = l[9:39].strip(), MOLWT = float(l[39:49]), C = int(l[49:52]), TRACER = int(l[52:61]), SCALE = float(l[61:71]), UNIT = l[72:].strip())) for l in tracerinfo.readlines() if l[0] not in ('#', ' ')])
             tracer_names = dict([(k, v['NAME']) for k, v in tracer_data.iteritems()])
         else:
             warn('Reading file without tracerinfo.dat means that names and scaling are unknown')
@@ -584,17 +608,21 @@ class bpch(PseudoNetCDFFile):
             tracer_names = defaultdictfromkey(lambda key: key)
         
         diaginfo = diaginfo or os.path.join(os.path.dirname(bpch_path), 'diaginfo.dat')
-        if not os.path.exists(diaginfo):
-            diaginfo = 'diaginfo.dat'
-        if os.path.exists(diaginfo):
-            if os.path.isdir(diaginfo): diaginfo = os.path.join(diaginfo, 'diaginfo.dat')
-            diag_data = dict([(l[9:49].strip(), dict(offset = int(l[:8]), desc = l[50:].strip())) for l in file(diaginfo).read().strip().split('\n') if l[0] != '#'])
+        if isinstance(diaginfo, (str, unicode)):
+            if not os.path.exists(diaginfo):
+                diaginfo = 'diaginfo.dat'
+            if os.path.exists(diaginfo):
+                if os.path.isdir(diaginfo): diaginfo = os.path.join(diaginfo, 'diaginfo.dat')
+            diaginfo = file(diaginfo)
+
+        if isinstance(diaginfo, (file, StringIO)):
+            diag_data = dict([(l[9:49].strip(), dict(offset = int(l[:8]), desc = l[50:].strip())) for l in diaginfo.read().strip().split('\n') if l[0] != '#'])
         else:
             warn('Reading file without diaginfo.dat loses descriptive information')
             diag_data = defaultdictfromkey(lambda key: dict(offset = 0, desc = key))
             
         if len(tracer_names) == 0 and not isinstance(tracer_names, defaultdictfromkey):
-            raise IOError("Error parsing %s for Tracer data")
+            raise IOError("Error parsing %s for Tracer data" % tracerinfo)
         file_size = os.stat(bpch_path).st_size
         offset = _general_header_type.itemsize
         data_types = []
@@ -632,9 +660,34 @@ class bpch(PseudoNetCDFFile):
                 tracer_data[tracer_number + goffset] = dict(SCALE = 1., C = 1., UNIT = unit)
 
             self._groups[group].add(tracername)
+            offset += _datablock_header_type.itemsize + header[-2]
+
             if first_header is None:
                 first_header = header
-            elif (header[7], header[8]) == (first_header[7], first_header[8]):
+            elif (header[7], header[8]) == (first_header[7], first_header[8]) or offset == file_size:
+                if offset == file_size:
+                    dim = header[13][::-1]
+                    start = header[14][::-1]
+                    data_type = dtype('>i4, %s>f4, >i4' % str(tuple(dim[:])))
+                    assert(data_type.itemsize == header[-2])
+                    data_types.append(data_type)
+                    keys.append('%s_%s' % (group, tracername))
+
+                # Repeating tracer indicates end of timestep
+                time_type = dtype([(k, dtype([('header', _datablock_header_type), ('data', d)])) for k, d in zip(keys, data_types)])
+                field_shapes = set([v[0].fields['data'][0].fields['f1'][0].shape for k, v in time_type.fields.iteritems()])
+                field_levs = set([s_[0] for s_ in field_shapes])
+                field_rows = set([s_[1] for s_ in field_shapes])
+                field_cols = set([s_[2] for s_ in field_shapes])
+                field_levs = list(field_levs)
+                field_levs.sort()
+                for fl in field_levs:
+                    self.createDimension('layer%d' % fl, fl)
+
+                itemcount = ((float(os.path.getsize(bpch_path)) - _general_header_type.itemsize) / time_type.itemsize)
+                if (itemcount % 1) != 0:
+                    warn("Cannot read whole file; assuming partial time block is at the end; skipping partial time record")
+                    itemcount = np.floor(itemcount)
                 break
             dim = header[13][::-1]
             start = header[14][::-1]
@@ -642,22 +695,12 @@ class bpch(PseudoNetCDFFile):
             assert(data_type.itemsize == header[-2])
             data_types.append(data_type)
             keys.append('%s_%s' % (group, tracername))
-            offset += _datablock_header_type.itemsize + header[-2]
 
-        time_type = dtype([(k, dtype([('header', _datablock_header_type), ('data', d)])) for k, d in zip(keys, data_types)])
-        field_shapes = set([v[0].fields['data'][0].fields['f1'][0].shape for k, v in time_type.fields.iteritems()])
-        field_levs = set([s_[0] for s_ in field_shapes])
-        field_rows = set([s_[1] for s_ in field_shapes])
-        field_cols = set([s_[2] for s_ in field_shapes])
-        field_levs = list(field_levs)
-        field_levs.sort()
-        for fl in field_levs:
-            self.createDimension('layer%d' % fl, fl)
-
-        assert((float(os.path.getsize(bpch_path)) - _general_header_type.itemsize) % time_type.itemsize == 0.)
         # load all data blocks  
         try:
-            datamap = memmap(bpch_path, dtype = time_type, offset = _general_header_type.itemsize, mode = mode)
+            datamap = memmap(bpch_path, dtype = time_type, offset = _general_header_type.itemsize, mode = mode, shape = (itemcount,))
+            if not timeslice is None:
+                datamap = datamap[timeslice]
         except OverflowError:
             hdrsize = _general_header_type.itemsize
             items = (2*1024**3-hdrsize) // time_type.itemsize
@@ -699,14 +742,187 @@ class bpch(PseudoNetCDFFile):
             else:
                 datamap = memmap(bpch_path, dtype = time_type, shape = (items,), offset = _general_header_type.itemsize, mode = mode)
                 warn('Returning only the first 2GB of data')
-
-        
+        for k in datamap.dtype.names:
+          gn = datamap[k]['header']['f7']
+          tid = datamap[k]['header']['f8']
+          assert((tid[0] == tid).all())
+          assert((gn[0] == gn).all())
         # Create variables and dimensions
         self.vertgrid = vertgrid
+        layerns = set([datamap[0][k]['header']['f13'][-1] for k in datamap.dtype.names])
+        layerkeys = ['layer_edges'] + ['layer%d' % l for l in layerns]
+        keys.extend(layerkeys)
+        if self.vertgrid in ('GEOS-5-REDUCED', 'MERRA-REDUCED'):
+            self.createDimension('layer', 47)
+            self.createDimension('layer_edges', 48)
+            # Ap [hPa] for 47 levels (48 edges)
+            self.Ap = np.array([0.000000e+00, 4.804826e-02, 6.593752e+00, 1.313480e+01,
+                             1.961311e+01, 2.609201e+01, 3.257081e+01, 3.898201e+01,
+                             4.533901e+01, 5.169611e+01, 5.805321e+01, 6.436264e+01,
+                             7.062198e+01, 7.883422e+01, 8.909992e+01, 9.936521e+01,
+                             1.091817e+02, 1.189586e+02, 1.286959e+02, 1.429100e+02,
+                             1.562600e+02, 1.696090e+02, 1.816190e+02, 1.930970e+02,
+                             2.032590e+02, 2.121500e+02, 2.187760e+02, 2.238980e+02,
+                             2.243630e+02, 2.168650e+02, 2.011920e+02, 1.769300e+02,
+                             1.503930e+02, 1.278370e+02, 1.086630e+02, 9.236572e+01,
+                             7.851231e+01, 5.638791e+01, 4.017541e+01, 2.836781e+01, 
+                             1.979160e+01, 9.292942e+00, 4.076571e+00, 1.650790e+00, 
+                             6.167791e-01, 2.113490e-01, 6.600001e-02, 1.000000e-02])
+
+            # Bp [unitless] for 47 levels (48 edges)
+            self.Bp = np.array([1.000000e+00, 9.849520e-01, 9.634060e-01, 9.418650e-01,
+                             9.203870e-01, 8.989080e-01, 8.774290e-01, 8.560180e-01,
+                             8.346609e-01, 8.133039e-01, 7.919469e-01, 7.706375e-01,
+                             7.493782e-01, 7.211660e-01, 6.858999e-01, 6.506349e-01,
+                             6.158184e-01, 5.810415e-01, 5.463042e-01, 4.945902e-01,
+                             4.437402e-01, 3.928911e-01, 3.433811e-01, 2.944031e-01,
+                             2.467411e-01, 2.003501e-01, 1.562241e-01, 1.136021e-01,
+                             6.372006e-02, 2.801004e-02, 6.960025e-03, 8.175413e-09,
+                             0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                             0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                             0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                             0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00])
+
+        elif self.vertgrid in ('GEOS-5-NATIVE', 'MERRA-NATIVE'):
+            self.createDimension('layer', 72)
+            self.createDimension('layer_edges', 73)
+            # Ap [hPa] for 72 levels (73 edges)
+            self.Ap = np.array([0.000000e+00, 4.804826e-02, 6.593752e+00, 1.313480e+01,
+                     1.961311e+01, 2.609201e+01, 3.257081e+01, 3.898201e+01,
+                     4.533901e+01, 5.169611e+01, 5.805321e+01, 6.436264e+01,
+                     7.062198e+01, 7.883422e+01, 8.909992e+01, 9.936521e+01,
+                     1.091817e+02, 1.189586e+02, 1.286959e+02, 1.429100e+02,
+                     1.562600e+02, 1.696090e+02, 1.816190e+02, 1.930970e+02,
+                     2.032590e+02, 2.121500e+02, 2.187760e+02, 2.238980e+02,
+                     2.243630e+02, 2.168650e+02, 2.011920e+02, 1.769300e+02,
+                     1.503930e+02, 1.278370e+02, 1.086630e+02, 9.236572e+01,
+                     7.851231e+01, 6.660341e+01, 5.638791e+01, 4.764391e+01,
+                     4.017541e+01, 3.381001e+01, 2.836781e+01, 2.373041e+01,
+                     1.979160e+01, 1.645710e+01, 1.364340e+01, 1.127690e+01,
+                     9.292942e+00, 7.619842e+00, 6.216801e+00, 5.046801e+00,
+                     4.076571e+00, 3.276431e+00, 2.620211e+00, 2.084970e+00,
+                     1.650790e+00, 1.300510e+00, 1.019440e+00, 7.951341e-01,
+                     6.167791e-01, 4.758061e-01, 3.650411e-01, 2.785261e-01,
+                     2.113490e-01, 1.594950e-01, 1.197030e-01, 8.934502e-02,
+                     6.600001e-02, 4.758501e-02, 3.270000e-02, 2.000000e-02,
+                     1.000000e-02])
+
+            # Bp [unitless] for 72 levels (73 edges)
+            self.Bp = np.array([1.000000e+00, 9.849520e-01, 9.634060e-01, 9.418650e-01,
+                     9.203870e-01, 8.989080e-01, 8.774290e-01, 8.560180e-01,
+                     8.346609e-01, 8.133039e-01, 7.919469e-01, 7.706375e-01,
+                     7.493782e-01, 7.211660e-01, 6.858999e-01, 6.506349e-01,
+                     6.158184e-01, 5.810415e-01, 5.463042e-01, 4.945902e-01,
+                     4.437402e-01, 3.928911e-01, 3.433811e-01, 2.944031e-01,
+                     2.467411e-01, 2.003501e-01, 1.562241e-01, 1.136021e-01,
+                     6.372006e-02, 2.801004e-02, 6.960025e-03, 8.175413e-09,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                     0.000000e+00])
+        elif self.vertgrid == 'GEOS-4-REDUCED':
+            self.createDimension('layer', 30)
+            self.createDimension('layer_edges', 31)
+            # Ap [hPa] for 30 levels (31 edges)
+            self.AP = np.array([0.000000e0,   0.000000e0,  12.704939e0,  35.465965e0, 
+                        66.098427e0, 101.671654e0, 138.744400e0, 173.403183e0, 
+                       198.737839e0, 215.417526e0, 223.884689e0, 224.362869e0, 
+                       216.864929e0, 201.192093e0, 176.929993e0, 150.393005e0, 
+                       127.837006e0, 108.663429e0,  92.365662e0,  78.512299e0, 
+                        56.387939e0,  40.175419e0,  28.367815e0,  19.791553e0, 
+                         9.292943e0,   4.076567e0,   1.650792e0,   0.616779e0, 
+                         0.211349e0,   0.066000e0,   0.010000e0])
+
+            # Bp [unitless] for 30 levels (31 edges)
+            self.Bp = np.array([1.000000e0,   0.985110e0,   0.943290e0,   0.867830e0, 
+                         0.764920e0,   0.642710e0,   0.510460e0,   0.378440e0, 
+                         0.270330e0,   0.183300e0,   0.115030e0,   0.063720e0, 
+                         0.028010e0,   0.006960e0,   0.000000e0,   0.000000e0, 
+                         0.000000e0,   0.000000e0,   0.000000e0,   0.000000e0, 
+                         0.000000e0,   0.000000e0,   0.000000e0,   0.000000e0, 
+                         0.000000e0,   0.000000e0,   0.000000e0,   0.000000e0, 
+                         0.000000e0,   0.000000e0,   0.000000e0])
+        elif self.vertgrid == 'GEOS-4-NATIVE':
+            self.createDimension('layer', 55)
+            self.createDimension('layer_edges', 56)
+            # AP [hPa] for 55 levels (56 edges)
+            self.Ap = np.array([0.000000e0,   0.000000e0,  12.704939e0,  35.465965e0, 
+                       66.098427e0, 101.671654e0, 138.744400e0, 173.403183e0,
+                      198.737839e0, 215.417526e0, 223.884689e0, 224.362869e0,
+                      216.864929e0, 201.192093e0, 176.929993e0, 150.393005e0,
+                      127.837006e0, 108.663429e0,  92.365662e0,  78.512299e0, 
+                       66.603378e0,  56.387939e0,  47.643932e0,  40.175419e0, 
+                       33.809956e0,  28.367815e0,  23.730362e0,  19.791553e0, 
+                       16.457071e0,  13.643393e0,  11.276889e0,   9.292943e0,
+                        7.619839e0,   6.216800e0,   5.046805e0,   4.076567e0, 
+                        3.276433e0,   2.620212e0,   2.084972e0,   1.650792e0,
+                        1.300508e0,   1.019442e0,   0.795134e0,   0.616779e0, 
+                        0.475806e0,   0.365041e0,   0.278526e0,   0.211349e0, 
+                        0.159495e0,   0.119703e0,   0.089345e0,   0.066000e0, 
+                        0.047585e0,   0.032700e0,   0.020000e0,   0.010000e0])
+
+            # BP [unitless] for 55 levels (56 edges)
+            self.Bp = np.array([1.000000e0,  0.985110e0,   0.943290e0,   0.867830e0,
+                         0.764920e0,  0.642710e0,   0.510460e0,   0.378440e0,
+                         0.270330e0,  0.183300e0,   0.115030e0,   0.063720e0,
+                         0.028010e0,  0.006960e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0,
+                         0.000000e0,  0.000000e0,   0.000000e0,   0.000000e0])
+        else:
+            warn('Assuming GEOS-5 reduced vertical coordinate')
+            self.createDimension('layer', 47)
+            self.createDimension('layer_edges', 48)
+            self.Ap = np.array([0.000000e+00, 4.804826e-02, 6.593752e+00, 1.313480e+01,
+                             1.961311e+01, 2.609201e+01, 3.257081e+01, 3.898201e+01,
+                             4.533901e+01, 5.169611e+01, 5.805321e+01, 6.436264e+01,
+                             7.062198e+01, 7.883422e+01, 8.909992e+01, 9.936521e+01,
+                             1.091817e+02, 1.189586e+02, 1.286959e+02, 1.429100e+02,
+                             1.562600e+02, 1.696090e+02, 1.816190e+02, 1.930970e+02,
+                             2.032590e+02, 2.121500e+02, 2.187760e+02, 2.238980e+02,
+                             2.243630e+02, 2.168650e+02, 2.011920e+02, 1.769300e+02,
+                             1.503930e+02, 1.278370e+02, 1.086630e+02, 9.236572e+01,
+                             7.851231e+01, 5.638791e+01, 4.017541e+01, 2.836781e+01, 
+                             1.979160e+01, 9.292942e+00, 4.076571e+00, 1.650790e+00, 
+                             6.167791e-01, 2.113490e-01, 6.600001e-02, 1.000000e-02])
+
+            # Bp [unitless] for 47 levels (48 edges)
+            self.Bp = np.array([1.000000e+00, 9.849520e-01, 9.634060e-01, 9.418650e-01,
+                             9.203870e-01, 8.989080e-01, 8.774290e-01, 8.560180e-01,
+                             8.346609e-01, 8.133039e-01, 7.919469e-01, 7.706375e-01,
+                             7.493782e-01, 7.211660e-01, 6.858999e-01, 6.506349e-01,
+                             6.158184e-01, 5.810415e-01, 5.463042e-01, 4.945902e-01,
+                             4.437402e-01, 3.928911e-01, 3.433811e-01, 2.944031e-01,
+                             2.467411e-01, 2.003501e-01, 1.562241e-01, 1.136021e-01,
+                             6.372006e-02, 2.801004e-02, 6.960025e-03, 8.175413e-09,
+                             0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                             0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                             0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00,
+                             0.000000e+00, 0.000000e+00, 0.000000e+00, 0.000000e+00])
+
         self.variables = _tracer_lookup(parent = self, datamap = datamap, tracerinfo = tracer_data, diaginfo = diag_data, keys = keys, noscale = self._noscale)
         del datamap
-        self.createDimension('time', self.variables['tau0'].shape[0])
+        tdim = self.createDimension('time', self.variables['tau0'].shape[0])
+        tdim.setunlimited(True)
         self.groups = dict([(k, _diag_group(self, k, v)) for k, v in self._groups.iteritems()])
+        for grp in self.groups.values():
+            for dk, d in self.dimensions.iteritems():
+                dmn = grp.createDimension(dk, len(d))
+                dmn.setunlimited(d.isunlimited())
         self.Conventions = "CF-1.6"
 
 
@@ -718,8 +934,8 @@ def tileplot(f, toplot, vmin = None, vmax = None, xmin = None, xmax = None, ymin
     from pylab import figure, colorbar, axis
     from matplotlib.colors import Normalize, LogNorm
     has_map = False
-    lat = np.append(f.variables['lat_bnds'][0, 0], f.variables['lat_bnds'][:, 1])
-    lon = np.append(f.variables['lon_bnds'][0, 0], f.variables['lon_bnds'][:, 1])
+    lat = np.append(f.variables['latitude_bounds'][0, 0], f.variables['latitude_bounds'][:, 1])
+    lon = np.append(f.variables['longitude_bounds'][0, 0], f.variables['longitude_bounds'][:, 1])
     parallels = arange(lat.min(),lat.max() + 15,15)
     meridians = arange(lon.min(), lon.max() + 30,30)
     fig = figure(figsize = (9,4))
@@ -967,7 +1183,7 @@ def reduce_dim(f, reducedef, fuzzydim = True):
             else:
                 vout = getattr(np, func)(var * np.array(numweight, ndmin = var.ndim)[(slice(None),)*axis + (slice(0,var.shape[axis]),)], axis = axis)[(slice(None),) * axis + (None,)] / getattr(np, func)(np.array(denweight, ndmin = var.ndim)[(slice(None),)*axis + (slice(0,var.shape[axis]),)], axis = axis)[(slice(None),) * axis + (None,)]
         else:
-            if '_bnds' not in varkey:
+            if '_bounds' not in varkey:
                 vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
             else:
                 vout = getattr(np, func)(var, axis = axis)[(slice(None),) * axis + (None,)]
@@ -1010,11 +1226,15 @@ def getvarpnc(f, varkeys):
             var = f.variables[varkey]
         for dimk, dimv in zip(var.dimensions, var.shape):
             if dimk not in outf.dimensions:
-                outf.createDimension(dimk, dimv)
+                newdimv = outf.createDimension(dimk, dimv)
+                if f.dimensions[dimk].isunlimited():
+                    newdimv.setunlimited(True)
                 coordkeys.append(dimk)
         for coordk in coordkeys:
             if coordk in f.dimensions and coordk not in outf.dimensions:
-                outf.createDimension(coordk, len(f.dimensions[coordk]))
+                newdimv = outf.createDimension(coordk, len(f.dimensions[coordk]))
+                if f.dimensions[coordk].isunlimited():
+                    newdimv.setunlimited(True)
     
         propd = dict([(k, getattr(var, k)) for k in var.ncattrs()])
         outf.createVariable(varkey, var.dtype.char, var.dimensions, values = var[:], **propd)
@@ -1029,7 +1249,12 @@ def pncdump(f, outpath, format):
     from netCDF4 import Dataset
     outf = Dataset(outpath, 'w', format = format)
     for dk, dv in f.dimensions.iteritems():
-        outf.createDimension(dk, len(dv))
+        if dk == 'time':
+            import pdb; pdb.set_trace()
+        if dv.isunlimited():
+            outf.createDimension(dk, None)
+        else:
+            outf.createDimension(dk, len(dv))
     
     for pk in f.ncattrs():
         setattr(outf, pk, getattr(f, pk))
@@ -1044,8 +1269,6 @@ def pncdump(f, outpath, format):
             outv[:] = vv[:,:outv.shape[1]]
         for pk in vv.ncattrs():
             setattr(outv, pk, getattr(vv, pk))
-    outf.variables['latitude'] = outf.variables['lat']
-    outf.variables['longitude'] = outf.variables['lon']
     
     outf.close()
 
@@ -1095,10 +1318,13 @@ For use as a library, use "from bpch import bpch" in a python script. For more i
 
     parser.add_option("", "--oldplot", dest = "oldplot", action='store_true', default = False, help = "Use old plot interface")
 
-    (options, args) = parser.parse_args()
-    if options.oldplot:
-        runold()
-        exit()
+    try:
+        (options, args) = parser.parse_args()
+    except:
+        import sys
+        if sys.argv[1] == '--oldplot':
+            runold()
+            exit()
     nfiles = len(args)
     if nfiles == 0:
         parser.print_help()
