@@ -12,5 +12,5 @@ setup(name = 'bpch',
       py_modules = ['bpch'],
       requires = ['numpy (>=1.5)', 'matplotlib (>=1.0)'],
       url = 'https://github.com/barronh/bpch',
-      download_url = 'https://github.com/barronh/bpch/archive/1.0rc.zip'
+      download_url = 'https://github.com/barronh/bpch/archive/1.0.zip'
       )

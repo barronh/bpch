@@ -41,6 +41,27 @@ pip install basemap
 
 Any time you want to use bpch, you'll need to activate virtualenv by running `source bpch/bin/activate`. You'll need to `source bpch/bin/activate`.
 
+Installation
+------------
+
+## First release
+
+```
+pip install bpch
+```
+
+or 
+
+```
+pip install http://github.com/barronh/bpch/archive/1.0.zip
+```
+
+## Latest version
+
+```
+pip install https://github.com/barronh/bpch/archive/master.zip
+```
+
 Examples
 --------
 
