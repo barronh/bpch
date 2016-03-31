@@ -46,6 +46,7 @@ except:
             new.variables={}
             new.dimensions={}
             new._ncattrs = ()
+            new._operator_exclude_vars = ()
             return new
     
         def __init__(self, *args, **properties):
@@ -567,7 +568,8 @@ class bpch(PseudoNetCDFFile):
          noscale: Do not apply scaling factors
          vertgrid: vertical coordinate system (options: 'GEOS-5-REDUCED', 'GEOS-5-NATIVE', 'MERRA-REDUCED', 'MERRA-NATIVE', 'GEOS-4-REDUCED', 'GEOS-4-NATIVE' -- default 'GEOS-5-REDUCED')
         """
-        self._ncattrs = () 
+        super(bpch, self).__init__()
+
         self._noscale = noscale
         # Read binary data for general header and first datablock header
         header_block = fromfile(bpch_path, dtype = 'bool', count = _first_header_size)
